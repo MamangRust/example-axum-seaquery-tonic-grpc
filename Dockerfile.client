@@ -13,6 +13,7 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
+COPY proto/ ./proto/
 
 RUN cargo build --release --target x86_64-unknown-linux-musl -p seaquery_client
 
