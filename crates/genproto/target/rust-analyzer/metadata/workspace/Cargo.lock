@@ -2589,8 +2589,6 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-stdout",
  "opentelemetry_sdk 0.29.0",
- "prometheus-client",
- "prometheus-client-derive-encode",
  "serde",
  "serde_json",
  "shared",
@@ -2609,7 +2607,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "axum",
  "bcrypt",
  "chrono",
  "dotenv",

@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     config::{ConnectionPool, Hashing, JwtConfig},
-    utils::{DependenciesInject, Metrics, SystemMetrics},
+    utils::{run_metrics_collector, DependenciesInject, Metrics, SystemMetrics},
 };
 
 #[derive(Clone, Debug)]
@@ -17,17 +17,27 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(pool: ConnectionPool, jwt_secret: &str, ) -> Self {
+    pub fn new(pool: ConnectionPool, jwt_secret: &str) -> Self {
         let jwt_config = JwtConfig::new(jwt_secret);
         let hashing = Hashing::new();
 
-        let registry = Arc::new(prometheus_client::registry::Registry::default());
-        let metrics = Arc::new(Mutex::new(Metrics {
-            requests: Family::default(),
-        }));
+        let requests = Family::default();
+        let mut registry = Registry::default();
+        
+        registry.register(
+            "server_http_requests",
+            "Total number of HTTP requests",
+            requests.clone(),
+        );
+
+        let registry = Arc::new(registry);
+        let metrics = Arc::new(Mutex::new(Metrics { requests }));
         let system_metrics = Arc::new(SystemMetrics::new());
 
-         let di_container = DependenciesInject::new(pool, hashing, jwt_config.clone(), metrics.clone());
+        tokio::spawn(run_metrics_collector(system_metrics.clone()));
+
+        let di_container =
+            DependenciesInject::new(pool, hashing, jwt_config.clone(), metrics.clone());
 
         Self {
             registry,

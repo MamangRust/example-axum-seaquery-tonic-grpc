@@ -145,8 +145,9 @@ impl Metrics {
     }
 }
 
-pub async fn metrics_handler(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
-    let state = state.lock().await;
+
+
+pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let mut buffer = String::new();
     encode(&mut buffer, &state.registry).unwrap();
 

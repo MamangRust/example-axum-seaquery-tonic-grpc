@@ -34,7 +34,6 @@ pub async fn auth(
                 })
         });
 
-    // Check if token exists
     let token = match token {
         Some(token) => token,
         None => {
@@ -48,7 +47,6 @@ pub async fn auth(
         }
     };
 
-    // Verify token and get user_id
     let user_id = match data.jwt_config.verify_token(&token) {
         Ok(id) => id,
         Err(_) => {
@@ -62,7 +60,6 @@ pub async fn auth(
         }
     };
 
-    // Insert user_id into request extensions
     req.extensions_mut().insert(user_id);
     
    
