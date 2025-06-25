@@ -1,7 +1,5 @@
-# Dockerfile.client
-FROM rust:1.87 as builder
+FROM rust:1.87 AS builder
 
-# Install dependencies
 RUN apt-get update && apt-get install -y \
     protobuf-compiler \
     musl-tools \
@@ -16,7 +14,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 
-RUN cargo build --release --target x86_64-unknown-linux-musl --bin seaquery_client
+RUN cargo build --release --target x86_64-unknown-linux-musl -p seaquery_client
 
 FROM alpine:3.20
 
