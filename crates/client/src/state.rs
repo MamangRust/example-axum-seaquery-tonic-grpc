@@ -1,4 +1,4 @@
-use prometheus_client::{metrics::family::Family, registry::Registry};
+use prometheus_client::{ registry::Registry};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

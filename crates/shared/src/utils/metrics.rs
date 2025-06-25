@@ -11,7 +11,7 @@ use std::{
 };
 use prometheus_client::registry::Registry;
 use sysinfo::System;
-use tokio::sync::Mutex;
+
 
 use crate::state::AppState;
 
@@ -146,6 +146,13 @@ impl Metrics {
 }
 
 
+pub async fn run_metrics_collector(system_metrics: Arc<SystemMetrics>) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+    loop {
+        interval.tick().await;
+        system_metrics.update_metrics().await;
+    }
+}
 
 pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let mut buffer = String::new();

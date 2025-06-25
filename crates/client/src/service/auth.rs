@@ -11,7 +11,7 @@ use shared::{
     domain::{
         ErrorResponse, LoginRequest as LoginDomainRequest, RegisterRequest as RegisterDomainRequest,
     },
-    utils::{MetadataInjector, Metrics},
+    utils::{MetadataInjector, Method, Metrics},
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -32,7 +32,7 @@ impl AuthService {
     }
 
     fn get_tracer(&self) -> BoxedTracer {
-        global::tracer("auth-service")
+        global::tracer("auth-service-client")
     }
 
     fn inject_trace_context<T>(&self, cx: &Context, request: &mut Request<T>) {
@@ -60,9 +60,21 @@ impl AuthService {
         &self,
         request_data: RegisterDomainRequest,
     ) -> Result<ApiResponseRegister, ErrorResponse> {
+        self.metrics.lock().await.inc_requests(Method::Post);
+
         let tracer = self.get_tracer();
-        let span = tracer.start("register_user");
+
+        let span = tracer
+            .span_builder("RegisterUser")
+            .with_kind(SpanKind::Client)
+            .with_attributes([
+                KeyValue::new("component", "auth"),
+                KeyValue::new("user.email", request_data.email.clone()),
+            ])
+            .start(&tracer);
         let cx = Context::current_with_span(span);
+
+        
 
         let mut request = Request::new(request_data.clone());
         self.inject_trace_context(&cx, &mut request);
@@ -93,8 +105,17 @@ impl AuthService {
         &self,
         request_data: LoginDomainRequest,
     ) -> Result<ApiResponseLogin, ErrorResponse> {
-        let tracer = self.get_tracer();
-        let span = tracer.start("login_user");
+        self.metrics.lock().await.inc_requests(Method::Post);
+
+       let tracer = self.get_tracer();
+        let span = tracer
+            .span_builder("LoginUser")
+            .with_kind(SpanKind::Client)
+            .with_attributes([
+                KeyValue::new("component", "auth"),
+                KeyValue::new("user.email", request_data.email.clone()),
+            ])
+            .start(&tracer);
         let cx = Context::current_with_span(span);
 
         let mut request = Request::new(request_data.clone());
@@ -111,6 +132,37 @@ impl AuthService {
         };
 
         self.add_completion_event(&cx, &result, "login_user_response".to_string());
+
+        result
+            .map(|resp| resp.into_inner())
+            .map_err(|status| ErrorResponse {
+                status: status.code().to_string(),
+                message: status.message().to_string(),
+            })
+    }
+
+    pub async fn get_me(&self, id: i32) -> Result<ApiResponseGetMe, ErrorResponse> {
+        self.metrics.lock().await.inc_requests(Method::Get);
+
+        let tracer = self.get_tracer();
+
+        let span = tracer
+            .span_builder("GetMe")
+            .with_kind(SpanKind::Client)
+            .with_attributes([
+                KeyValue::new("component", "user"),
+                KeyValue::new("user.id", id.to_string()),
+            ])
+            .start(&tracer);
+        let cx = Context::current_with_span(span);
+
+        let mut client = self.client.lock().await;
+        let mut request = Request::new(GetMeRequest { id});
+
+        self.inject_trace_context(&cx, &mut request);
+
+        let result = client.get_me(request).await;
+        self.add_completion_event(&cx, &result, "get_me_response".to_string());
 
         result
             .map(|resp| resp.into_inner())
