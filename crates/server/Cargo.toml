@@ -33,3 +33,4 @@ opentelemetry-stdout = { version="0.29.0", features = ["trace"] }
 opentelemetry-otlp = { version="0.29.0", features = ["grpc-tonic"] }
 tonic = "0.13.0"
 tokio = { version = "1.45.0", features = ["full"] }
+openssl = { version = "0.10.73", features = ["vendored"] }
