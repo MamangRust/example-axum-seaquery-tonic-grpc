@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package category;
+
+import "api.proto";
+
+
+message FindAllCategoryRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string search = 3;
+}
+
+message CreateCategoryRequest {
+  string name = 1;
+}
+
+message UpdateCategoryRequest {
+  int32 id = 1;
+  string name = 2;
+}
+
+message FindCategoryRequest {
+  int32 id = 1;
+}
+
+
+
+message CategoryResponse {
+  int32 id = 1;
+  string name = 2;
+}
+
+message ApiResponseCategory {
+  string status = 1;
+  string message = 2;
+  CategoryResponse data = 3;
+}
+
+
+message ApiResponseCategoriesPaginated {
+  string status = 1;
+  string message = 2;
+  repeated CategoryResponse data = 3;
+  api.Pagination pagination = 4;
+}
+
+
+
+service CategoryService {
+  rpc GetCategories(FindAllCategoryRequest) returns (ApiResponseCategoriesPaginated);
+  rpc GetCategory(FindCategoryRequest) returns (ApiResponseCategory);
+  rpc CreateCategory(CreateCategoryRequest) returns (ApiResponseCategory);
+  rpc UpdateCategory(UpdateCategoryRequest) returns (ApiResponseCategory);
+  rpc DeleteCategory(FindCategoryRequest) returns (api.ApiResponseEmpty);
+}

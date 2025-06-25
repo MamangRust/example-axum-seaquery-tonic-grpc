@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package user;
+
+import "api.proto";
+
+message FindAllUserRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string search = 3;
+}
+
+message CreateUserRequest {
+  string firstname = 1;
+  string lastname = 2;
+  string email = 3;
+  string password = 4;
+}
+
+message UpdateUserRequest {
+  int32 id = 1;
+  string firstname = 2;
+  string lastname = 3;
+  string email = 4;
+  string password = 5;
+}
+
+
+message FindUserByIdRequest {
+  int32 id = 1;
+}
+
+message DeleteUserRequest {
+  string email = 1;
+}
+
+message UserResponse {
+  int32 id = 1;
+  string firstname = 2;
+  string lastname = 3;
+  string email = 4;
+}
+
+message ApiResponseUserResponse {
+  string status = 1;
+  string message = 2;
+  UserResponse data = 3;
+}
+
+message ApiResponsesUserResponse {
+  string status = 1;
+  string message = 2;
+  repeated UserResponse data = 3;
+  api.Pagination pagination = 4;
+}
+
+
+
+
+
+
+service UserService {
+  rpc FindAllUsers(FindAllUserRequest) returns (ApiResponsesUserResponse);
+  rpc CreateUser(CreateUserRequest) returns (ApiResponseUserResponse);
+  rpc FindById(FindUserByIdRequest) returns (ApiResponseUserResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (ApiResponseUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (api.ApiResponseEmpty);
+}

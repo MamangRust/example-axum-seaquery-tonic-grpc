@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package comment;
+
+import "api.proto";
+
+
+message Empty {}
+
+message CommentResponse {
+  int32 id = 1;
+  int32 id_post_comment = 2;
+  string user_name_comment = 3;
+  string comment = 4;
+}
+
+message CreateCommentRequest {
+  int32 id_post_comment = 1;
+  string user_name_comment = 2;
+  string comment = 3;
+}
+
+message UpdateCommentRequest {
+  int32 id_post_comment = 1;
+  string user_name_comment = 2;
+  string comment = 3;
+}
+
+message FindCommentRequest {
+  int32 id = 1;
+}
+
+
+
+message ApiResponseComment {
+  string status = 1;
+  string message = 2;
+  CommentResponse data = 3;
+}
+
+message ApiResponsesComment {
+  string status = 1;
+  string message = 2;
+  repeated CommentResponse data = 3;
+}
+
+
+
+
+service CommentService {
+  rpc GetComments(Empty) returns (ApiResponsesComment);
+  rpc GetComment(FindCommentRequest) returns (ApiResponseComment);
+  rpc CreateComment(CreateCommentRequest) returns (ApiResponseComment);
+  rpc UpdateComment(UpdateCommentRequest) returns (ApiResponseComment);
+  rpc DeleteComment(FindCommentRequest) returns (api.ApiResponseEmpty);
+}

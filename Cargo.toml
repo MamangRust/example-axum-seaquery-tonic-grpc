@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "crates/client",
+    "crates/server",
+    "crates/genproto",
+    "crates/shared",
+]
+
+resolver = "3"
+
+[profile.release]
+debug = true

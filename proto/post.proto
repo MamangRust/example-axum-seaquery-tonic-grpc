@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package post;
+
+import "comment.proto";
+import "api.proto";
+
+message FindAllPostRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string search = 3;
+}
+
+message CreatePostRequest {
+  string title = 1;
+  string body = 2;
+  string file = 3; 
+  int32 category_id = 4;
+  int32 user_id = 5;
+  string user_name = 6;
+}
+
+message UpdatePostRequest {
+  int32 post_id = 1;
+  string title = 2;
+  string body = 3;
+  string file = 4;
+  int32 category_id = 5;
+  int32 user_id = 6;
+  string user_name = 7;
+}
+
+message FindPostRequest {
+  int32 post_id = 1;
+}
+
+
+
+message PostResponse {
+  int32 id = 1;
+  string title = 2;
+  string body = 3;
+  string img = 4;
+  int32 category_id = 5;
+  int32 user_id = 6;
+  string user_name = 7;
+}
+
+message PostRelationResponse {
+  int32 post_id = 1;
+  string title = 2;
+  int32 comment_id = 3;
+  int32 id_post_comment = 4;
+  string user_name_comment = 5;
+  string comment = 6;
+}
+
+
+message ApiResponsePost {
+  string status = 1;
+  string message = 2;
+  PostResponse data = 3;
+}
+
+message ApiResponsePostRelation {
+  string status = 1;
+  string message = 2;
+  PostRelationResponse data = 3;
+}
+
+
+
+message ApiResponsePostsPaginated {
+  string status = 1;
+  string message = 2;
+  repeated PostResponse data = 3;
+  api.Pagination pagination = 4;
+}
+
+message ApiResponseEmpty {
+  string status = 1;
+  string message = 2;
+}
+
+
+service PostsService {
+  rpc FindAllPosts(FindAllPostRequest) returns (ApiResponsePostsPaginated);
+  rpc FindPost(FindPostRequest) returns (ApiResponsePost);
+  rpc FindPostRelation(FindPostRequest) returns (ApiResponsePostRelation);
+  rpc CreatePost(CreatePostRequest) returns (ApiResponsePost);
+  rpc UpdatePost(UpdatePostRequest) returns (ApiResponsePost);
+  rpc DeletePost(FindPostRequest) returns (api.ApiResponseEmpty);
+}
