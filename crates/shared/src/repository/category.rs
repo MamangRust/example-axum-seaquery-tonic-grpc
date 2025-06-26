@@ -49,7 +49,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .offset(offset as u64);
 
         if let Some(term) = &search {
-            select_query.and_where(Expr::col(Categories::Name).like(format!("{}%", term)));
+            select_query.and_where(Expr::col(Categories::Name).like(format!("{term}%")));
         }
 
         let (sql, values) = select_query.build_sqlx(PostgresQueryBuilder);
