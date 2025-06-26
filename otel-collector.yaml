@@ -24,7 +24,7 @@ receivers:
         - job_name: "blog-server-service"
           scrape_interval: 15s
           static_configs:
-            - targets: ["blog-server:50051"]
+            - targets: ["blog-server:8080"]
               labels:
                 application: "blog-server-grpc-service"
 
@@ -39,6 +39,8 @@ exporters:
 
   prometheus:
     endpoint: "0.0.0.0:8889"
+    resource_to_telemetry_conversion:
+      enabled: false
 
 extensions:
   health_check:

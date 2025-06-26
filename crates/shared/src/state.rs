@@ -25,14 +25,18 @@ impl AppState {
         let mut registry = Registry::default();
 
         registry.register(
-            "server_http_requests",
+            "server_http_requests_server",
             "Total number of HTTP requests",
             requests.clone(),
         );
 
-        let registry = Arc::new(registry);
         let metrics = Arc::new(Mutex::new(Metrics { requests }));
+
         let system_metrics = Arc::new(SystemMetrics::new());
+
+        system_metrics.register(&mut registry);
+
+        let registry = Arc::new(registry);
 
         tokio::spawn(run_metrics_collector(system_metrics.clone()));
 

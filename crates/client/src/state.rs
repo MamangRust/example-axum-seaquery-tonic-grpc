@@ -33,7 +33,7 @@ impl AppState {
         let mut registry = Registry::default();
 
         registry.register(
-            "server_http_requests",
+            "server_http_requests_client",
             "Total number of HTTP requests",
             requests.clone(),
         );

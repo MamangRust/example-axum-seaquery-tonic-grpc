@@ -10,7 +10,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     let mytelemetry = Telemetry::new("myclient");
+
     let tracer_provider = mytelemetry.init_tracer();
+
     let meter_provider = mytelemetry.init_meter();
     let logger_provider = mytelemetry.init_logger();
 

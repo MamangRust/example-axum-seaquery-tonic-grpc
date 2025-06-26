@@ -1,8 +1,10 @@
 use std::sync::OnceLock;
 
+use opentelemetry::global;
 use opentelemetry_otlp::{LogExporter, MetricExporter, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::{
-    Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider, trace::SdkTracerProvider,
+    Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider,
+    propagation::TraceContextPropagator, trace::SdkTracerProvider,
 };
 
 #[derive(Clone)]
@@ -29,16 +31,21 @@ impl Telemetry {
     }
 
     pub fn init_tracer(&self) -> SdkTracerProvider {
+        global::set_text_map_propagator(TraceContextPropagator::new());
+
         let exporter = SpanExporter::builder()
             .with_tonic()
             .with_endpoint("http://otel-collector:4317")
             .build()
             .expect("Failed to create span exporter");
 
-        SdkTracerProvider::builder()
+        let provider = SdkTracerProvider::builder()
             .with_resource(self.get_resource())
             .with_batch_exporter(exporter)
-            .build()
+            .build();
+
+        global::set_tracer_provider(provider.clone());
+        provider
     }
 
     pub fn init_meter(&self) -> SdkMeterProvider {
