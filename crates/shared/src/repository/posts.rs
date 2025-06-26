@@ -100,10 +100,7 @@ impl PostsRepositoryTrait for PostRepository {
         Ok(result)
     }
 
-    async fn get_post_relation(
-        &self,
-        post_id: i32,
-    ) -> Result<Vec<PostRelationResponse>, AppError> {
+    async fn get_post_relation(&self, post_id: i32) -> Result<Vec<PostRelationResponse>, AppError> {
         let query = Query::select()
             .column((Posts::Table, Posts::Id))
             .column((Posts::Table, Posts::Title))

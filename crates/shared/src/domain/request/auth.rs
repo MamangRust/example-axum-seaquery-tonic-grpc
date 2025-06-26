@@ -9,9 +9,7 @@ pub struct RegisterRequest {
     pub password: String,
 }
 
-
-
-#[derive(Debug, Clone,  Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,

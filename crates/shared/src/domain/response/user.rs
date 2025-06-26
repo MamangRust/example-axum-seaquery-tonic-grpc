@@ -1,10 +1,9 @@
+use crate::model::user::User;
+use genproto::user::UserResponse as ProtoUserResponse;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use genproto::user::UserResponse as ProtoUserResponse;
-use crate::model::user::User;
 
-
-#[derive(Debug, Deserialize, Serialize,  Clone, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
 pub struct UserResponse {
     pub id: i32,
     pub firstname: String,
@@ -41,6 +40,20 @@ impl From<ProtoUserResponse> for UserResponse {
             firstname: user.firstname,
             lastname: user.lastname,
             email: user.email,
+        }
+    }
+}
+
+impl From<Option<ProtoUserResponse>> for UserResponse {
+    fn from(user: Option<ProtoUserResponse>) -> Self {
+        match user {
+            Some(user) => user.into(),
+            None => UserResponse {
+                id: 0,
+                firstname: "".to_string(),
+                lastname: "".to_string(),
+                email: "".to_string(),
+            },
         }
     }
 }

@@ -1,6 +1,6 @@
+use async_trait::async_trait;
 use genproto::auth::{
-    ApiResponseGetMe, ApiResponseLogin, ApiResponseRegister, GetMeRequest, LoginRequest,
-    RegisterRequest, auth_service_client::AuthServiceClient,
+    GetMeRequest, LoginRequest, RegisterRequest, auth_service_client::AuthServiceClient,
 };
 use opentelemetry::{
     Context, KeyValue,
@@ -9,13 +9,16 @@ use opentelemetry::{
 };
 use shared::{
     domain::{
-        ErrorResponse, LoginRequest as LoginDomainRequest, RegisterRequest as RegisterDomainRequest,
+        ApiResponse, ErrorResponse, LoginRequest as LoginDomainRequest,
+        RegisterRequest as RegisterDomainRequest, UserResponse,
     },
     utils::{MetadataInjector, Method, Metrics},
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::{Request, Status, transport::Channel};
+
+use crate::abstract_trait::AuthServiceTrait;
 
 #[derive(Debug)]
 pub struct AuthService {
@@ -55,15 +58,17 @@ impl AuthService {
         cx.span()
             .add_event(event_name, vec![KeyValue::new("status", status)]);
     }
+}
 
-    pub async fn register(
+#[async_trait]
+impl AuthServiceTrait for AuthService {
+    async fn register(
         &self,
         request_data: RegisterDomainRequest,
-    ) -> Result<ApiResponseRegister, ErrorResponse> {
+    ) -> Result<ApiResponse<UserResponse>, ErrorResponse> {
         self.metrics.lock().await.inc_requests(Method::Post);
 
         let tracer = self.get_tracer();
-
         let span = tracer
             .span_builder("RegisterUser")
             .with_kind(SpanKind::Client)
@@ -74,40 +79,44 @@ impl AuthService {
             .start(&tracer);
         let cx = Context::current_with_span(span);
 
-        
-
-        let mut request = Request::new(request_data.clone());
-        self.inject_trace_context(&cx, &mut request);
-
-        let myrequest = RegisterRequest{
+        let mut request = Request::new(RegisterRequest {
             firstname: request_data.firstname.clone(),
             lastname: request_data.lastname.clone(),
             email: request_data.email.clone(),
             password: request_data.password.clone(),
-        };
+        });
+
+        self.inject_trace_context(&cx, &mut request);
 
         let result = {
             let mut client = self.client.lock().await;
-            client.register_user(myrequest).await
+            client.register_user(request).await
         };
 
         self.add_completion_event(&cx, &result, "register_user_response".to_string());
 
         result
-            .map(|resp| resp.into_inner())
             .map_err(|status| ErrorResponse {
                 status: status.code().to_string(),
                 message: status.message().to_string(),
             })
+            .map(|resp| {
+                let inner = resp.into_inner();
+                ApiResponse {
+                    status: inner.status,
+                    message: inner.message,
+                    data: inner.data.into(),
+                }
+            })
     }
 
-    pub async fn login(
+    async fn login(
         &self,
         request_data: LoginDomainRequest,
-    ) -> Result<ApiResponseLogin, ErrorResponse> {
+    ) -> Result<ApiResponse<String>, ErrorResponse> {
         self.metrics.lock().await.inc_requests(Method::Post);
 
-       let tracer = self.get_tracer();
+        let tracer = self.get_tracer();
         let span = tracer
             .span_builder("LoginUser")
             .with_kind(SpanKind::Client)
@@ -118,34 +127,39 @@ impl AuthService {
             .start(&tracer);
         let cx = Context::current_with_span(span);
 
-        let mut request = Request::new(request_data.clone());
-        self.inject_trace_context(&cx, &mut request);
-
-        let myrequest = LoginRequest{
+        let mut request = Request::new(LoginRequest {
             email: request_data.email.clone(),
             password: request_data.password.clone(),
-        };
+        });
+
+        self.inject_trace_context(&cx, &mut request);
 
         let result = {
             let mut client = self.client.lock().await;
-            client.login_user(myrequest).await
+            client.login_user(request).await
         };
 
         self.add_completion_event(&cx, &result, "login_user_response".to_string());
 
         result
-            .map(|resp| resp.into_inner())
+            .map(|resp| {
+                let inner = resp.into_inner();
+                ApiResponse {
+                    status: inner.status,
+                    message: inner.message,
+                    data: inner.data,
+                }
+            })
             .map_err(|status| ErrorResponse {
                 status: status.code().to_string(),
                 message: status.message().to_string(),
             })
     }
 
-    pub async fn get_me(&self, id: i32) -> Result<ApiResponseGetMe, ErrorResponse> {
+    async fn get_me(&self, id: i32) -> Result<ApiResponse<UserResponse>, ErrorResponse> {
         self.metrics.lock().await.inc_requests(Method::Get);
 
         let tracer = self.get_tracer();
-
         let span = tracer
             .span_builder("GetMe")
             .with_kind(SpanKind::Client)
@@ -156,16 +170,25 @@ impl AuthService {
             .start(&tracer);
         let cx = Context::current_with_span(span);
 
-        let mut client = self.client.lock().await;
-        let mut request = Request::new(GetMeRequest { id});
-
+        let mut request = Request::new(GetMeRequest { id });
         self.inject_trace_context(&cx, &mut request);
 
-        let result = client.get_me(request).await;
+        let result = {
+            let mut client = self.client.lock().await;
+            client.get_me(request).await
+        };
+
         self.add_completion_event(&cx, &result, "get_me_response".to_string());
 
         result
-            .map(|resp| resp.into_inner())
+            .map(|resp| {
+                let inner = resp.into_inner();
+                ApiResponse {
+                    status: inner.status,
+                    message: inner.message,
+                    data: inner.data.into(),
+                }
+            })
             .map_err(|status| ErrorResponse {
                 status: status.code().to_string(),
                 message: status.message().to_string(),

@@ -44,3 +44,17 @@ impl From<ProtoCommentResponse> for CommentResponse {
         }
     }
 }
+
+impl From<Option<ProtoCommentResponse>> for CommentResponse {
+    fn from(comment: Option<ProtoCommentResponse>) -> Self {
+        match comment {
+            Some(comment) => comment.into(),
+            None => CommentResponse {
+                id: 0,
+                id_post_comment: 0,
+                user_name_comment: "".to_string(),
+                comment: "".to_string(),
+            },
+        }
+    }
+}

@@ -2,13 +2,8 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use genproto::auth::{
-    auth_service_server::AuthService,
-    LoginRequest,
-    RegisterRequest,
-    GetMeRequest,
-    ApiResponseGetMe,
-    ApiResponseRegister,
-    ApiResponseLogin,
+    ApiResponseGetMe, ApiResponseLogin, ApiResponseRegister, GetMeRequest, LoginRequest,
+    RegisterRequest, auth_service_server::AuthService,
 };
 
 use shared::{

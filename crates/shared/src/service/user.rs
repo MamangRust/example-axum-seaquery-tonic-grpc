@@ -1,6 +1,9 @@
 use crate::{
     abstract_trait::{DynUserRepository, UserServiceTrait},
-    domain::{ApiResponse, ApiResponsePagination, CreateUserRequest, ErrorResponse, UpdateUserRequest, UserResponse, Pagination, FindAllUserRequest},
+    domain::{
+        ApiResponse, ApiResponsePagination, CreateUserRequest, ErrorResponse, FindAllUserRequest,
+        Pagination, UpdateUserRequest, UserResponse,
+    },
     utils::{AppError, MetadataInjector, Method, Metrics},
 };
 use async_trait::async_trait;
@@ -9,10 +12,10 @@ use opentelemetry::{
     global::{self, BoxedTracer},
     trace::{SpanKind, TraceContextExt, Tracer},
 };
-use tracing::info;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::{Request, Status};
+use tracing::info;
 
 #[derive(Clone)]
 pub struct UserService {
@@ -29,7 +32,7 @@ impl UserService {
     }
 
     fn get_tracer(&self) -> BoxedTracer {
-        global::tracer("category-service")
+        global::tracer("user-service")
     }
 
     fn inject_trace_context<T>(&self, cx: &Context, request: &mut Request<T>) {
@@ -102,14 +105,7 @@ impl UserServiceTrait for UserService {
             .repository
             .find_all(page, page_size, search)
             .await
-            .map_err(|e| {
-                tracing::error!("Repository error: {}", e);
-                AppError::from(e)
-            })
-            .map_err(|e| {
-                tracing::error!("Repository error: {}", e);
-                ErrorResponse::from(e)
-            })?;
+            .map_err(ErrorResponse::from)?;
 
         info!("Found {} users", users.len());
 
@@ -156,7 +152,6 @@ impl UserServiceTrait for UserService {
             .repository
             .find_by_email_exists(&input.email)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         if exists {
@@ -167,7 +162,6 @@ impl UserServiceTrait for UserService {
             .repository
             .create_user(input)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "User created successfully".to_string());
@@ -204,7 +198,6 @@ impl UserServiceTrait for UserService {
             .repository
             .find_by_id(id)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "User retrieved successfully".to_string());
@@ -248,7 +241,6 @@ impl UserServiceTrait for UserService {
             .repository
             .update_user(input)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "User updated successfully".to_string());
@@ -278,12 +270,12 @@ impl UserServiceTrait for UserService {
         let cx = Context::current_with_span(span);
 
         let mut request = Request::new(email_str.clone());
+
         self.inject_trace_context(&cx, &mut request);
 
         self.repository
             .delete_user(email)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "User deleted successfully".to_string());

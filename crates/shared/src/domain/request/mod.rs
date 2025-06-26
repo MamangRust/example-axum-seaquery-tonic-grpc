@@ -11,4 +11,4 @@ pub use self::comment::{CreateCommentRequest, UpdateCommentRequest};
 
 pub use self::auth::{LoginRequest, RegisterRequest};
 
-pub use self::user::{CreateUserRequest, UpdateUserRequest, FindAllUserRequest };
+pub use self::user::{CreateUserRequest, FindAllUserRequest, UpdateUserRequest};

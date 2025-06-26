@@ -17,6 +17,8 @@ mod service;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    dotenv::dotenv().ok();
+
     let mytelemetry = Telemetry::new("myserver");
     let tracer_provider = mytelemetry.init_tracer();
     let meter_provider = mytelemetry.init_meter();

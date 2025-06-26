@@ -1,7 +1,9 @@
 use std::sync::OnceLock;
 
-use opentelemetry_otlp::{SpanExporter, MetricExporter, LogExporter, WithExportConfig};
-use opentelemetry_sdk::{logs::SdkLoggerProvider, metrics::SdkMeterProvider, trace::SdkTracerProvider, Resource};
+use opentelemetry_otlp::{LogExporter, MetricExporter, SpanExporter, WithExportConfig};
+use opentelemetry_sdk::{
+    Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider, trace::SdkTracerProvider,
+};
 
 #[derive(Clone)]
 pub struct Telemetry {

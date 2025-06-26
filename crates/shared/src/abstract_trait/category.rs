@@ -4,9 +4,11 @@ use async_trait::async_trait;
 
 use crate::{
     domain::{
-        ApiResponse, ApiResponsePagination, CategoryResponse, CreateCategoryRequest, ErrorResponse, FindAllCategoryRequest,  UpdateCategoryRequest
-    }, model::category::Category, utils::AppError
-    
+        ApiResponse, ApiResponsePagination, CategoryResponse, CreateCategoryRequest, ErrorResponse,
+        FindAllCategoryRequest, UpdateCategoryRequest,
+    },
+    model::category::Category,
+    utils::AppError,
 };
 
 pub type DynCategoryRepository = Arc<dyn CategoryRepositoryTrait + Send + Sync>;

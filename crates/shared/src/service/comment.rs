@@ -1,15 +1,25 @@
-use crate::{abstract_trait::{CommentServiceTrait, DynCommentRepository, }, domain::{ApiResponse, CommentResponse, CreateCommentRequest, ErrorResponse, UpdateCommentRequest},  utils::{AppError, MetadataInjector, Method, Metrics},};
-use opentelemetry::{global::{self, BoxedTracer}, trace::{SpanKind, TraceContextExt, Tracer}, Context, KeyValue};
+use crate::{
+    abstract_trait::{CommentServiceTrait, DynCommentRepository},
+    domain::{
+        ApiResponse, CommentResponse, CreateCommentRequest, ErrorResponse, UpdateCommentRequest,
+    },
+    utils::{AppError, MetadataInjector, Method, Metrics},
+};
+use async_trait::async_trait;
+use opentelemetry::{
+    Context, KeyValue,
+    global::{self, BoxedTracer},
+    trace::{SpanKind, TraceContextExt, Tracer},
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use async_trait::async_trait;
-use tonic::{Request,  Status};
+use tonic::{Request, Status};
 use tracing::info;
 
 #[derive(Clone)]
 pub struct CommentService {
     repository: DynCommentRepository,
-    metrics: Arc<Mutex<Metrics>>
+    metrics: Arc<Mutex<Metrics>>,
 }
 
 impl std::fmt::Debug for CommentService {
@@ -18,20 +28,18 @@ impl std::fmt::Debug for CommentService {
             .field("repository", &"DynCommentRepository")
             .finish()
     }
-
-    
 }
 
 impl CommentService {
     pub fn new(repository: DynCommentRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
         Self {
             repository,
-            metrics
+            metrics,
         }
     }
 
-    fn get_tracer(&self) -> BoxedTracer{
-        global::tracer("category-service")
+    fn get_tracer(&self) -> BoxedTracer {
+        global::tracer("comment-service")
     }
 
     fn inject_trace_context<T>(&self, cx: &Context, request: &mut Request<T>) {
@@ -74,31 +82,37 @@ impl CommentServiceTrait for CommentService {
         let span = tracer
             .span_builder("GetComments")
             .with_kind(SpanKind::Server)
-            .with_attributes([
-                KeyValue::new("component", "comment"),
-            ])
+            .with_attributes([KeyValue::new("component", "comment")])
             .start(&tracer);
         let cx = Context::current_with_span(span);
 
         let mut request = Request::new(());
         self.inject_trace_context(&cx, &mut request);
 
-        let comments = self.repository.find_all().await .map_err(AppError::from).map_err(ErrorResponse::from)?;
-        
-        let response = comments.into_iter().map(|comment| {
-            CommentResponse::from(comment)
-        }).collect();
+        let comments = self
+            .repository
+            .find_all()
+            .await
+            .map_err(ErrorResponse::from)?;
+
+        let response = comments
+            .into_iter()
+            .map(CommentResponse::from)
+            .collect();
 
         self.add_completion_event(&cx, &Ok(()), "Comments retrieved successfully".to_string());
-        
-        Ok(ApiResponse{
+
+        Ok(ApiResponse {
             status: "success".to_string(),
             message: "Comments retrieved successfully".to_string(),
-            data: response
+            data: response,
         })
     }
 
-    async fn get_comment(&self, id: i32) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse> {
+    async fn get_comment(
+        &self,
+        id: i32,
+    ) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse> {
         self.metrics.lock().await.inc_requests(Method::Get);
 
         let tracer = self.get_tracer();
@@ -116,22 +130,32 @@ impl CommentServiceTrait for CommentService {
         let mut request = Request::new(id);
         self.inject_trace_context(&cx, &mut request);
 
-        let comment = self.repository.find_by_id(id).await .map_err(AppError::from).map_err(ErrorResponse::from)?;
+        let comment = self
+            .repository
+            .find_by_id(id)
+            .await
+            .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Comment retrieved successfully".to_string());
-        
-        if let Some(comment) = comment{
-            Ok(Some(ApiResponse{
+
+        if let Some(comment) = comment {
+            Ok(Some(ApiResponse {
                 status: "success".to_string(),
                 message: "Comment retrieved successfully".to_string(),
                 data: CommentResponse::from(comment),
             }))
-        }else{
-            Err(ErrorResponse::from(AppError::NotFound(format!("Comment with id {} not found", id))))
+        } else {
+            Err(ErrorResponse::from(AppError::NotFound(format!(
+                "Comment with id {} not found",
+                id
+            ))))
         }
     }
 
-    async fn create_comment(&self, input: &CreateCommentRequest) -> Result<ApiResponse<CommentResponse>, ErrorResponse> {
+    async fn create_comment(
+        &self,
+        input: &CreateCommentRequest,
+    ) -> Result<ApiResponse<CommentResponse>, ErrorResponse> {
         self.metrics.lock().await.inc_requests(Method::Post);
 
         let tracer = self.get_tracer();
@@ -150,10 +174,14 @@ impl CommentServiceTrait for CommentService {
 
         self.inject_trace_context(&cx, &mut request);
 
-        let comment = self.repository.create(input).await .map_err(AppError::from).map_err(ErrorResponse::from)?;
+        let comment = self
+            .repository
+            .create(input)
+            .await
+            .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Comment created successfully".to_string());
-        
+
         Ok(ApiResponse {
             status: "success".to_string(),
             message: "Comment created successfully".to_string(),
@@ -161,7 +189,10 @@ impl CommentServiceTrait for CommentService {
         })
     }
 
-    async fn update_comment(&self, input: &UpdateCommentRequest) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse> {
+    async fn update_comment(
+        &self,
+        input: &UpdateCommentRequest,
+    ) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse> {
         self.metrics.lock().await.inc_requests(Method::Put);
 
         let tracer = self.get_tracer();
@@ -180,10 +211,14 @@ impl CommentServiceTrait for CommentService {
 
         self.inject_trace_context(&cx, &mut request);
 
-        let comment = self.repository.update(input).await.map_err(AppError::from).map_err(ErrorResponse::from)?;
+        let comment = self
+            .repository
+            .update(input)
+            .await
+            .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Comment updated successfully".to_string());
-        
+
         Ok(Some(ApiResponse {
             status: "success".to_string(),
             message: "Comment updated successfully".to_string(),
@@ -209,10 +244,13 @@ impl CommentServiceTrait for CommentService {
         let mut request = Request::new(id);
         self.inject_trace_context(&cx, &mut request);
 
-        self.repository.delete(id).await.map_err(AppError::from).map_err(ErrorResponse::from)?;
+        self.repository
+            .delete(id)
+            .await
+            .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Comment deleted successfully".to_string());
-        
+
         Ok(ApiResponse {
             status: "success".to_string(),
             message: "Comment deleted successfully".to_string(),

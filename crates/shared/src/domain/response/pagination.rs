@@ -11,10 +11,19 @@ pub struct Pagination {
     pub total_pages: i32,
 }
 
-
-
 impl From<Pagination> for ProtoPagination {
     fn from(value: Pagination) -> Self {
+        Self {
+            page: value.page,
+            page_size: value.page_size,
+            total_items: value.total_items,
+            total_pages: value.total_pages,
+        }
+    }
+}
+
+impl From<ProtoPagination> for Pagination {
+    fn from(value: ProtoPagination) -> Self {
         Self {
             page: value.page,
             page_size: value.page_size,

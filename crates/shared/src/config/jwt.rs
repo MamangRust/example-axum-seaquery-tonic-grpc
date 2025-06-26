@@ -1,12 +1,10 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{
-    decode, encode, errors::ErrorKind as JwtError, DecodingKey, EncodingKey, Header, Validation,
+    DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::ErrorKind as JwtError,
 };
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::utils::AppError;
-
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -17,18 +15,18 @@ pub struct Claims {
 
 impl Claims {
     pub fn new(user_id: i64, exp: usize, iat: usize) -> Self {
-        Claims { user_id, exp, iat}
+        Claims { user_id, exp, iat }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct JwtConfig{
+pub struct JwtConfig {
     pub jwt_secret: String,
 }
 
 impl JwtConfig {
     pub fn new(jwt_secret: &str) -> Self {
-        JwtConfig{
+        JwtConfig {
             jwt_secret: jwt_secret.to_string(),
         }
     }
@@ -43,20 +41,20 @@ impl JwtConfig {
         match encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret("YOUR_SECRET_KEY".as_ref()),
+            &EncodingKey::from_secret(self.jwt_secret.as_ref()),
         ) {
             Ok(token) => Ok(token),
-            Err(err) => Err(AppError::TokenGenerationError(err.into())),
+            Err(err) => Err(AppError::TokenGenerationError(err)),
         }
     }
 
     pub fn verify_token(&self, token: &str) -> Result<i64, AppError> {
-        let decoding_key = DecodingKey::from_secret("YOUR_SECRET_KEY".as_ref());
-    
+        let decoding_key = DecodingKey::from_secret(self.jwt_secret.as_ref());
+
         match decode::<Claims>(token, &decoding_key, &Validation::default()) {
             Ok(token_data) => {
                 let current_time = Utc::now().timestamp() as usize;
-    
+
                 if token_data.claims.exp >= current_time {
                     Ok(token_data.claims.user_id)
                 } else {
@@ -73,5 +71,4 @@ impl JwtConfig {
             }
         }
     }
-    
 }

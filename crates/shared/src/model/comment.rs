@@ -1,7 +1,5 @@
 use sqlx::prelude::FromRow;
 
-
-
 #[derive(Debug, FromRow, Clone)]
 pub struct Comment {
     pub id: i32,

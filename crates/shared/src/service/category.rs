@@ -6,17 +6,21 @@ use crate::{
     },
     utils::{AppError, MetadataInjector, Method, Metrics},
 };
-use opentelemetry::{global::{self, BoxedTracer}, trace::{SpanKind, TraceContextExt, Tracer}, Context, KeyValue};
+use async_trait::async_trait;
+use opentelemetry::{
+    Context, KeyValue,
+    global::{self, BoxedTracer},
+    trace::{SpanKind, TraceContextExt, Tracer},
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use async_trait::async_trait;
-use tonic::{Request,  Status};
+use tonic::{Request, Status};
 use tracing::info;
 
 #[derive(Clone)]
 pub struct CategoryService {
     repository: DynCategoryRepository,
-    metrics: Arc<Mutex<Metrics>>
+    metrics: Arc<Mutex<Metrics>>,
 }
 
 impl std::fmt::Debug for CategoryService {
@@ -29,13 +33,13 @@ impl std::fmt::Debug for CategoryService {
 
 impl CategoryService {
     pub fn new(repository: DynCategoryRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
-        Self { 
+        Self {
             repository,
-            metrics
+            metrics,
         }
     }
 
-    fn get_tracer(&self) -> BoxedTracer{
+    fn get_tracer(&self) -> BoxedTracer {
         global::tracer("category-service")
     }
 
@@ -109,14 +113,7 @@ impl CategoryServiceTrait for CategoryService {
             .repository
             .find_all(page, page_size, search)
             .await
-            .map_err(|e| {
-                tracing::error!("Repository error: {}", e);
-                AppError::from(e)
-            })
-            .map_err(|e| {
-                tracing::error!("Repository error: {}", e);
-                ErrorResponse::from(e)
-            })?;
+            .map_err(ErrorResponse::from)?;
 
         info!("Found {} categories", categories.len());
 
@@ -125,7 +122,11 @@ impl CategoryServiceTrait for CategoryService {
         let category_responses: Vec<CategoryResponse> =
             categories.into_iter().map(CategoryResponse::from).collect();
 
-        self.add_completion_event(&cx, &Ok(()), "Categories retrieved successfully".to_string());
+        self.add_completion_event(
+            &cx,
+            &Ok(()),
+            "Categories retrieved successfully".to_string(),
+        );
 
         Ok(ApiResponsePagination {
             status: "success".to_string(),
@@ -166,7 +167,6 @@ impl CategoryServiceTrait for CategoryService {
             .repository
             .find_by_id(id)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Category retrieved successfully".to_string());
@@ -213,7 +213,6 @@ impl CategoryServiceTrait for CategoryService {
             .repository
             .create(input)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         info!("Category created: {:#?}", category);
@@ -238,7 +237,10 @@ impl CategoryServiceTrait for CategoryService {
             .with_kind(SpanKind::Server)
             .with_attributes([
                 KeyValue::new("component", "category"),
-                KeyValue::new("category.name", input.name.clone().unwrap_or("".to_string())),
+                KeyValue::new(
+                    "category.name",
+                    input.name.clone().unwrap_or("".to_string()),
+                ),
             ])
             .start(&tracer);
         let cx = Context::current_with_span(span);
@@ -251,7 +253,6 @@ impl CategoryServiceTrait for CategoryService {
             .repository
             .update(input)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Category updated successfully".to_string());
@@ -285,7 +286,6 @@ impl CategoryServiceTrait for CategoryService {
         self.repository
             .delete(id)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Category deleted successfully".to_string());

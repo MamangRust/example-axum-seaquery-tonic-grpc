@@ -3,10 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::{
-    domain::{ApiResponse, CommentResponse, CreateCommentRequest, ErrorResponse,  UpdateCommentRequest}, model::comment::Comment,  
-    utils::AppError  
+    domain::{
+        ApiResponse, CommentResponse, CreateCommentRequest, ErrorResponse, UpdateCommentRequest,
+    },
+    model::comment::Comment,
+    utils::AppError,
 };
-
 
 pub type DynCommentRepository = Arc<dyn CommentRepositoryTrait + Send + Sync>;
 pub type DynCommentService = Arc<dyn CommentServiceTrait + Send + Sync>;
@@ -23,11 +25,17 @@ pub trait CommentRepositoryTrait {
 #[async_trait]
 pub trait CommentServiceTrait {
     async fn get_comments(&self) -> Result<ApiResponse<Vec<CommentResponse>>, ErrorResponse>;
-    async fn get_comment(&self, id: i32) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse> ;
-    async fn create_comment(&self, input: &CreateCommentRequest) -> Result<ApiResponse<CommentResponse>, ErrorResponse>;
+    async fn get_comment(
+        &self,
+        id: i32,
+    ) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse>;
+    async fn create_comment(
+        &self,
+        input: &CreateCommentRequest,
+    ) -> Result<ApiResponse<CommentResponse>, ErrorResponse>;
     async fn update_comment(
         &self,
-        input: &UpdateCommentRequest
+        input: &UpdateCommentRequest,
     ) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse>;
     async fn delete_comment(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse>;
 }

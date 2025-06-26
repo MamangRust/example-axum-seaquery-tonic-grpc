@@ -1,8 +1,7 @@
 use genproto::api::ApiResponseEmpty;
 use genproto::user::{
     ApiResponseUserResponse, ApiResponsesUserResponse, CreateUserRequest, DeleteUserRequest,
-    FindAllUserRequest, FindUserByIdRequest, UpdateUserRequest,
-    user_service_server::UserService,
+    FindAllUserRequest, FindUserByIdRequest, UpdateUserRequest, user_service_server::UserService,
 };
 use shared::{
     domain::{

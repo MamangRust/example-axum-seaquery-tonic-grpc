@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 shared = { path = "../shared"}
 genproto = { path = "../genproto" }
+async-trait = "0.1.88"
 tonic = "0.13.0"
 axum = { version = "0.8.4", features = ["multipart"] }
 axum-extra = { version = "0.10.1", features = ["cookie"] }
@@ -19,6 +20,7 @@ utoipa-axum = "0.2.0"
 utoipa-swagger-ui = { version = "9.0.1", features = ["axum"] }
 uuid = { version = "1.16.0", features = ["v4"] }
 thiserror = "2.0.12"
+tower-http = { version = "0.6.2", features = ["limit", "trace", "fs"] }
 tokio = { version = "1.45.0", features = ["full"] }
 prometheus-client = "0.23.1"
 prometheus-client-derive-encode = "0.4.2"

@@ -1,14 +1,13 @@
-
 use async_trait::async_trait;
 use sea_query::{Expr, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 
-use crate::config::ConnectionPool;
-use crate::domain::{CreateCommentRequest,  UpdateCommentRequest};
-use crate::utils::AppError;
 use crate::abstract_trait::CommentRepositoryTrait;
-use crate::schema::comment::Comments;
+use crate::config::ConnectionPool;
+use crate::domain::{CreateCommentRequest, UpdateCommentRequest};
 use crate::model::comment::Comment;
+use crate::schema::comment::Comments;
+use crate::utils::AppError;
 
 pub struct CommentRepository {
     db_pool: ConnectionPool,
@@ -19,7 +18,6 @@ impl CommentRepository {
         Self { db_pool }
     }
 }
-
 
 #[async_trait]
 impl CommentRepositoryTrait for CommentRepository {
@@ -81,7 +79,9 @@ impl CommentRepositoryTrait for CommentRepository {
 
         let (sql, values) = insert;
 
-        let row = sqlx::query_with(&sql, values).fetch_one(&self.db_pool).await?;
+        let row = sqlx::query_with(&sql, values)
+            .fetch_one(&self.db_pool)
+            .await?;
         let id: i32 = sqlx::Row::try_get(&row, 0)?;
 
         self.find_by_id(id)
@@ -97,7 +97,10 @@ impl CommentRepositoryTrait for CommentRepository {
         let update = Query::update()
             .table(Comments::Table)
             .values(vec![
-                (Comments::UserNameComment, input.user_name_comment.clone().into()),
+                (
+                    Comments::UserNameComment,
+                    input.user_name_comment.clone().into(),
+                ),
                 (Comments::Comment, input.comment.clone().into()),
             ])
             .and_where(Expr::col(Comments::Id).eq(id))

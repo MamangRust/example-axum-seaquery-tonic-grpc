@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use axum::{http::StatusCode, Json};
+use axum::{Json, http::StatusCode};
 use chrono::Local;
 use std::{collections::HashMap, fs, path::Path};
 use tokio::{fs::File, io::AsyncWriteExt};
@@ -10,13 +10,10 @@ use crate::{
     domain::{DeleteResponse, UploadResponse},
 };
 
+#[derive(Default)]
 pub struct FileService {}
 
 impl FileService {
-    pub fn new() -> Self {
-        Self {}
-    }
-
     fn get_extension_from_mime(&self, mime_type: &str) -> Option<&'static str> {
         let mime_map: HashMap<&str, &str> =
             HashMap::from([("image/jpeg", "jpg"), ("image/png", "png")]);

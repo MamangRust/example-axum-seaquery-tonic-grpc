@@ -1,22 +1,28 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use async_trait::async_trait;
-use opentelemetry::{global::{self, BoxedTracer}, trace::{SpanKind, TraceContextExt, Tracer}, Context, KeyValue};
 use crate::{
     abstract_trait::{AuthServiceTrait, DynUserRepository},
     config::{Hashing, JwtConfig},
-    domain::{ApiResponse, CreateUserRequest, ErrorResponse, LoginRequest, RegisterRequest, UserResponse},
+    domain::{
+        ApiResponse, CreateUserRequest, ErrorResponse, LoginRequest, RegisterRequest, UserResponse,
+    },
     utils::{AppError, MetadataInjector, Method, Metrics},
 };
-use tonic::{Request,  Status};
+use async_trait::async_trait;
+use opentelemetry::{
+    Context, KeyValue,
+    global::{self, BoxedTracer},
+    trace::{SpanKind, TraceContextExt, Tracer},
+};
+use tonic::{Request, Status};
 
 #[derive(Clone)]
 pub struct AuthService {
     repository: DynUserRepository,
     hashing: Hashing,
     jwt_config: JwtConfig,
-    metrics: Arc<Mutex<Metrics>>
+    metrics: Arc<Mutex<Metrics>>,
 }
 
 impl std::fmt::Debug for AuthService {
@@ -29,23 +35,22 @@ impl std::fmt::Debug for AuthService {
     }
 }
 
-
 impl AuthService {
     pub fn new(
-        repository: DynUserRepository, 
-        hashing: Hashing, 
+        repository: DynUserRepository,
+        hashing: Hashing,
         jwt_config: JwtConfig,
-        metrics: Arc<Mutex<Metrics>>
+        metrics: Arc<Mutex<Metrics>>,
     ) -> Self {
-        Self { 
+        Self {
             repository,
             hashing,
             jwt_config,
-            metrics
+            metrics,
         }
     }
 
-    fn get_tracer(&self) -> BoxedTracer{
+    fn get_tracer(&self) -> BoxedTracer {
         global::tracer("auth-service")
     }
 
@@ -73,7 +78,10 @@ impl AuthService {
 
 #[async_trait]
 impl AuthServiceTrait for AuthService {
-    async fn register_user(&self, input: &RegisterRequest) -> Result<ApiResponse<UserResponse>, ErrorResponse> {
+    async fn register_user(
+        &self,
+        input: &RegisterRequest,
+    ) -> Result<ApiResponse<UserResponse>, ErrorResponse> {
         self.metrics.lock().await.inc_requests(Method::Post);
 
         let tracer = self.get_tracer();
@@ -88,20 +96,24 @@ impl AuthServiceTrait for AuthService {
             .start(&tracer);
         let cx = Context::current_with_span(span);
 
-        let mut request= Request::new(input.clone());
+        let mut request = Request::new(input.clone());
 
         self.inject_trace_context(&cx, &mut request);
 
-
-        let exists = self.repository.find_by_email_exists(&input.email).await
-            .map_err(AppError::from)  
-            .map_err(ErrorResponse::from)?; 
+        let exists = self
+            .repository
+            .find_by_email_exists(&input.email)
+            .await
+            .map_err(ErrorResponse::from)?;
 
         if exists {
             return Err(ErrorResponse::from(AppError::EmailAlreadyExists));
         }
 
-        let hashed_password = self.hashing.hash_password(&input.password).await
+        let hashed_password = self
+            .hashing
+            .hash_password(&input.password)
+            .await
             .map_err(|e| ErrorResponse::from(AppError::HashingError(e)))?;
 
         let request = CreateUserRequest {
@@ -111,8 +123,10 @@ impl AuthServiceTrait for AuthService {
             password: hashed_password,
         };
 
-        let create_user = self.repository.create_user(&request).await
-            .map_err(AppError::from)
+        let create_user = self
+            .repository
+            .create_user(&request)
+            .await
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(create_user.clone()), "UserCreated".to_string());
@@ -141,16 +155,25 @@ impl AuthServiceTrait for AuthService {
         let mut request = Request::new(input.clone());
         self.inject_trace_context(&cx, &mut request);
 
-        let user = self.repository.find_by_email(&input.email).await
-            .map_err(AppError::from)
+        let user = self
+            .repository
+            .find_by_email(&input.email)
+            .await
             .map_err(ErrorResponse::from)?
             .ok_or_else(|| ErrorResponse::from(AppError::NotFound("User not found".to_string())))?;
 
-        if self.hashing.compare_password(&user.password, &input.password).await.is_err() {
+        if self
+            .hashing
+            .compare_password(&user.password, &input.password)
+            .await
+            .is_err()
+        {
             return Err(ErrorResponse::from(AppError::InvalidCredentials));
         }
 
-        let token = self.jwt_config.generate_token(user.id as i64)
+        let token = self
+            .jwt_config
+            .generate_token(user.id as i64)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(token.clone()), "LoginSuccessful".to_string());
@@ -163,6 +186,6 @@ impl AuthServiceTrait for AuthService {
     }
 
     fn verify_token(&self, token: &str) -> Result<i64, AppError> {
-        self.jwt_config.verify_token(token).map_err(AppError::from)
+        self.jwt_config.verify_token(token)
     }
 }

@@ -2,7 +2,7 @@ use genproto::api::ApiResponseEmpty;
 use genproto::comment::Empty;
 use genproto::comment::{
     ApiResponseComment, ApiResponsesComment, CreateCommentRequest as ProtoCreateCommentRequest,
-     FindCommentRequest, UpdateCommentRequest as ProtoUpdateCommentRequest,
+    FindCommentRequest, UpdateCommentRequest as ProtoUpdateCommentRequest,
     comment_service_server::CommentService,
 };
 
@@ -10,7 +10,6 @@ use shared::{
     domain::{
         CreateCommentRequest as SharedCreateCommentRequest,
         UpdateCommentRequest as SharedUpdateCommentRequest,
-        
     },
     state::AppState,
 };
@@ -36,13 +35,7 @@ impl CommentService for CommentServiceImpl {
     ) -> Result<Response<ApiResponsesComment>, Status> {
         info!("Getting comments");
 
-        match self
-            .state
-            .di_container
-            .comment_service
-            .get_comments()
-            .await
-        {
+        match self.state.di_container.comment_service.get_comments().await {
             Ok(api_response) => {
                 let comments: Vec<_> = api_response.data.into_iter().map(Into::into).collect();
 

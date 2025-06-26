@@ -1,15 +1,17 @@
-use std::sync::Arc;
 use axum::{
+    Json,
     body::Body,
     extract::State,
-    http::{header, Request, StatusCode},
+    http::{Request, StatusCode, header},
     middleware::Next,
     response::IntoResponse,
-    Json,
 };
 use axum_extra::extract::cookie::CookieJar;
+use std::sync::Arc;
 
-use shared::{domain::ErrorResponse, state::AppState};
+use shared::domain::ErrorResponse;
+
+use crate::state::AppState;
 
 pub async fn auth(
     cookie_jar: CookieJar,
@@ -17,7 +19,6 @@ pub async fn auth(
     mut req: Request<Body>,
     next: Next,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    
     let token = cookie_jar
         .get("token")
         .map(|cookie| cookie.value().to_string())
@@ -25,13 +26,7 @@ pub async fn auth(
             req.headers()
                 .get(header::AUTHORIZATION)
                 .and_then(|auth_header| auth_header.to_str().ok())
-                .and_then(|auth_value| {
-                    if auth_value.starts_with("Bearer ") {
-                        Some(auth_value[7..].to_owned())
-                    } else {
-                        None
-                    }
-                })
+                .and_then(|auth_value| auth_value.strip_prefix("Bearer ").map(str::to_owned))
         });
 
     let token = match token {
@@ -61,7 +56,6 @@ pub async fn auth(
     };
 
     req.extensions_mut().insert(user_id);
-    
-   
+
     Ok(next.run(req).await)
 }

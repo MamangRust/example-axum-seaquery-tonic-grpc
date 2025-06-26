@@ -15,7 +15,6 @@ impl Config {
             std::env::var("RUN_MIGRATIONS").expect("RUN_MIGRATIONS must be set");
         let port_str = std::env::var("PORT").expect("PORT must be set");
 
-
         let run_migrations = match run_migrations_str.as_str() {
             "true" => true,
             "false" => false,
@@ -24,7 +23,11 @@ impl Config {
 
         let port = port_str.parse().expect("Invalid value for PORT");
 
-        Config { database_url, jwt_secret, run_migrations, port }
- 
+        Config {
+            database_url,
+            jwt_secret,
+            run_migrations,
+            port,
+        }
     }
 }

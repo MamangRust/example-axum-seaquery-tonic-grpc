@@ -1,17 +1,21 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{header::CONTENT_TYPE, StatusCode},
+    http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
 };
-use prometheus_client::{encoding::text::encode, metrics::{counter::Counter, family::Family, gauge::Gauge}};
+use prometheus_client::registry::Registry;
+use prometheus_client::{
+    encoding::text::encode,
+    metrics::{counter::Counter, family::Family, gauge::Gauge},
+};
 use prometheus_client_derive_encode::{EncodeLabelSet, EncodeLabelValue};
 use std::{
-    fs, sync::Arc, time::{SystemTime, UNIX_EPOCH}
+    fs,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
-use prometheus_client::registry::Registry;
 use sysinfo::System;
-
 
 use crate::state::AppState;
 
@@ -37,6 +41,12 @@ pub struct SystemMetrics {
     pub thread_usage: Gauge,
     pub total_cpu_usage: Counter,
     pub process_start_time: Gauge,
+}
+
+impl Default for SystemMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SystemMetrics {
@@ -144,7 +154,6 @@ impl Metrics {
         self.requests.get_or_create(&MethodLabels { method }).inc();
     }
 }
-
 
 pub async fn run_metrics_collector(system_metrics: Arc<SystemMetrics>) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));

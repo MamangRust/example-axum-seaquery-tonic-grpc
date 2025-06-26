@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-
 use crate::{
     abstract_trait::{
         DynAuthService, DynCategoryRepository, DynCategoryService, DynCommentRepository,
@@ -12,7 +11,8 @@ use crate::{
     repository::{CategoryRepository, CommentRepository, PostRepository, UserRepository},
     service::{
         AuthService, CategoryService, CommentService, FileService, PostService, UserService,
-    }, utils::Metrics,
+    },
+    utils::Metrics,
 };
 
 #[derive(Clone)]
@@ -38,18 +38,23 @@ impl std::fmt::Debug for DependenciesInject {
     }
 }
 
-
 impl DependenciesInject {
-    pub fn new(pool: ConnectionPool, hashing: Hashing, jwt_config: JwtConfig, metrics: Arc<Mutex<Metrics>>) -> Self {
+    pub fn new(
+        pool: ConnectionPool,
+        hashing: Hashing,
+        jwt_config: JwtConfig,
+        metrics: Arc<Mutex<Metrics>>,
+    ) -> Self {
         let category_repository =
             Arc::new(CategoryRepository::new(pool.clone())) as DynCategoryRepository;
 
-        let category_service =
-            Arc::new(CategoryService::new(category_repository, metrics.clone())) as DynCategoryService;
+        let category_service = Arc::new(CategoryService::new(category_repository, metrics.clone()))
+            as DynCategoryService;
 
         let post_repository = Arc::new(PostRepository::new(pool.clone())) as DynPostsRepository;
 
-        let post_service = Arc::new(PostService::new(post_repository.clone(), metrics.clone())) as DynPostsService;
+        let post_service =
+            Arc::new(PostService::new(post_repository.clone(), metrics.clone())) as DynPostsService;
 
         let comment_repository =
             Arc::new(CommentRepository::new(pool.clone())) as DynCommentRepository;
@@ -58,7 +63,8 @@ impl DependenciesInject {
 
         let user_repository = Arc::new(UserRepository::new(pool.clone())) as DynUserRepository;
 
-        let user_service = Arc::new(UserService::new(user_repository.clone(), metrics.clone())) as DynUserService;
+        let user_service =
+            Arc::new(UserService::new(user_repository.clone(), metrics.clone())) as DynUserService;
 
         let auth_service = Arc::new(AuthService::new(
             user_repository.clone(),
@@ -67,7 +73,7 @@ impl DependenciesInject {
             metrics,
         ));
 
-        let file_service = Arc::new(FileService::new()) as DynFileService;
+        let file_service = Arc::new(FileService::default()) as DynFileService;
 
         Self {
             category_service,

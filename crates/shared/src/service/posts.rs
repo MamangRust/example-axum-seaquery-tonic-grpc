@@ -15,7 +15,6 @@ use opentelemetry::{
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::{Request, Status};
-use tracing::error;
 
 #[derive(Clone)]
 pub struct PostService {
@@ -111,7 +110,6 @@ impl PostsServiceTrait for PostService {
             .repository
             .get_all_posts(page, page_size, search)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         let responses: Vec<PostResponse> = posts.into_iter().map(PostResponse::from).collect();
@@ -155,7 +153,6 @@ impl PostsServiceTrait for PostService {
             .repository
             .get_post(post_id)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Post retrieved successfully".to_string());
@@ -199,7 +196,6 @@ impl PostsServiceTrait for PostService {
             .repository
             .get_post_relation(post_id)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         let first_relation = relations
@@ -246,11 +242,7 @@ impl PostsServiceTrait for PostService {
             .repository
             .create_post(input)
             .await
-            .map_err(|e| {
-                error!("Failed to create post: {}", e);
-                AppError::from(e)
-            })
-            .map_err(|e| ErrorResponse::from(e))?;
+            .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Post created successfully".to_string());
 
@@ -287,7 +279,6 @@ impl PostsServiceTrait for PostService {
             .repository
             .update_post(input)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Post updated successfully".to_string());
@@ -320,7 +311,6 @@ impl PostsServiceTrait for PostService {
         self.repository
             .delete_post(post_id)
             .await
-            .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
         self.add_completion_event(&cx, &Ok(()), "Post deleted successfully".to_string());

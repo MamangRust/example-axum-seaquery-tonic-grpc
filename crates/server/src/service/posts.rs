@@ -1,8 +1,7 @@
 use genproto::api::ApiResponseEmpty;
 use genproto::post::{
-    ApiResponsePost, ApiResponsePostsPaginated, ApiResponsePostRelation,
-    CreatePostRequest, FindAllPostRequest, FindPostRequest,
-    posts_service_server::PostsService, UpdatePostRequest,
+    ApiResponsePost, ApiResponsePostRelation, ApiResponsePostsPaginated, CreatePostRequest,
+    FindAllPostRequest, FindPostRequest, UpdatePostRequest, posts_service_server::PostsService,
 };
 use shared::{
     domain::{
@@ -72,13 +71,7 @@ impl PostsService for PostsServiceImpl {
     ) -> Result<Response<ApiResponsePost>, Status> {
         let post_id = request.into_inner().post_id;
 
-        match self
-            .state
-            .di_container
-            .post_service
-            .get_post(post_id)
-            .await
-        {
+        match self.state.di_container.post_service.get_post(post_id).await {
             Ok(Some(post)) => {
                 let reply = ApiResponsePost {
                     status: "success".into(),

@@ -1,9 +1,10 @@
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::model::posts::{PostRelationModel, Post};
-use genproto::post::{PostResponse as ProtoPostResponse, PostRelationResponse as ProtoPostRelationResponse};
-
+use crate::model::posts::{Post, PostRelationModel};
+use genproto::post::{
+    PostRelationResponse as ProtoPostRelationResponse, PostResponse as ProtoPostResponse,
+};
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PostResponse {
@@ -58,6 +59,23 @@ impl From<ProtoPostResponse> for PostResponse {
     }
 }
 
+impl From<Option<ProtoPostResponse>> for PostResponse {
+    fn from(post: Option<ProtoPostResponse>) -> Self {
+        match post {
+            Some(post) => PostResponse::from(post),
+            None => PostResponse {
+                id: 0,
+                title: "".to_string(),
+                body: "".to_string(),
+                img: "".to_string(),
+                category_id: 0,
+                user_id: 0,
+                user_name: "".to_string(),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PostRelationResponse {
     pub post_id: i32,
@@ -67,8 +85,6 @@ pub struct PostRelationResponse {
     pub user_name_comment: String,
     pub comment: String,
 }
-
-
 
 impl From<PostRelationModel> for PostRelationResponse {
     fn from(post_relation: PostRelationModel) -> Self {
@@ -105,6 +121,22 @@ impl From<ProtoPostRelationResponse> for PostRelationResponse {
             id_post_comment: post_relation.id_post_comment,
             user_name_comment: post_relation.user_name_comment,
             comment: post_relation.comment,
+        }
+    }
+}
+
+impl From<Option<ProtoPostRelationResponse>> for PostRelationResponse {
+    fn from(post_relation: Option<ProtoPostRelationResponse>) -> Self {
+        match post_relation {
+            Some(post_relation) => PostRelationResponse::from(post_relation),
+            None => PostRelationResponse {
+                post_id: 0,
+                title: "".to_string(),
+                comment_id: 0,
+                id_post_comment: 0,
+                user_name_comment: "".to_string(),
+                comment: "".to_string(),
+            },
         }
     }
 }

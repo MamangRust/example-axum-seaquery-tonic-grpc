@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     config::{ConnectionPool, Hashing, JwtConfig},
-    utils::{run_metrics_collector, DependenciesInject, Metrics, SystemMetrics},
+    utils::{DependenciesInject, Metrics, SystemMetrics, run_metrics_collector},
 };
 
 #[derive(Clone, Debug)]
@@ -19,11 +19,11 @@ pub struct AppState {
 impl AppState {
     pub fn new(pool: ConnectionPool, jwt_secret: &str) -> Self {
         let jwt_config = JwtConfig::new(jwt_secret);
-        let hashing = Hashing::new();
+        let hashing = Hashing;
 
         let requests = Family::default();
         let mut registry = Registry::default();
-        
+
         registry.register(
             "server_http_requests",
             "Total number of HTTP requests",

@@ -4,9 +4,11 @@ use async_trait::async_trait;
 
 use crate::{
     domain::{
-        ApiResponse, ApiResponsePagination, CreatePostRequest, ErrorResponse, FindAllPostRequest, PostRelationResponse, PostResponse,  UpdatePostRequest
-    }, model::posts::Post,
-    utils::AppError
+        ApiResponse, ApiResponsePagination, CreatePostRequest, ErrorResponse, FindAllPostRequest,
+        PostRelationResponse, PostResponse, UpdatePostRequest,
+    },
+    model::posts::Post,
+    utils::AppError,
 };
 
 pub type DynPostsRepository = Arc<dyn PostsRepositoryTrait + Send + Sync>;

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sea_query::{Expr, Func, Order, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::abstract_trait::UserRepositoryTrait;
 use crate::config::ConnectionPool;

@@ -1,6 +1,6 @@
 use crate::abstract_trait::CategoryRepositoryTrait;
 use crate::config::ConnectionPool;
-use crate::domain::{CreateCategoryRequest,  UpdateCategoryRequest};
+use crate::domain::{CreateCategoryRequest, UpdateCategoryRequest};
 use crate::model::category::Category;
 use crate::schema::category::Categories;
 use crate::utils::AppError;
@@ -31,17 +31,15 @@ impl CategoryRepositoryTrait for CategoryRepository {
             "Finding all categories - page: {}, page_size: {}, search: {:?}",
             page, page_size, search
         );
-        
-        
+
         if page <= 0 || page_size <= 0 {
             return Err(AppError::ValidationError(
                 "Page and page_size must be positive".to_string(),
             ));
         }
-        
+
         let offset = (page - 1) * page_size;
-        
-        
+
         let mut select_query = Query::select();
         select_query
             .columns([Categories::Id, Categories::Name])
@@ -49,20 +47,17 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .order_by(Categories::Id, Order::Asc)
             .limit(page_size as u64)
             .offset(offset as u64);
-            
+
         if let Some(term) = &search {
             select_query.and_where(Expr::col(Categories::Name).like(format!("{}%", term)));
         }
-        
+
         let (sql, values) = select_query.build_sqlx(PostgresQueryBuilder);
 
-
-        
         let categories_result = sqlx::query_as_with::<_, Category, _>(&sql, values)
             .fetch_all(&self.db_pool)
             .await;
 
-            
         let categories = match categories_result {
             Ok(cats) => cats,
             Err(e) => {
@@ -70,26 +65,26 @@ impl CategoryRepositoryTrait for CategoryRepository {
                 return Err(AppError::SqlxError(e));
             }
         };
-        
+
         info!("Found {} categories", categories.len());
-       
+
         let mut count_query = Query::select();
         count_query
             .expr(Func::count(Expr::col(Categories::Id)))
             .from(Categories::Table);
-            
+
         if let Some(term) = &search {
             count_query.and_where(Expr::col(Categories::Name).like(format!("{}%", term)));
         }
-        
+
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
-        
-        debug!("Count SQL: {}", count_sql); 
-        
+
+        debug!("Count SQL: {}", count_sql);
+
         let total_result = sqlx::query_as_with::<_, (i64,), _>(&count_sql, count_values)
             .fetch_one(&self.db_pool)
             .await;
-            
+
         let total = match total_result {
             Ok(count) => count.0,
             Err(e) => {
@@ -97,17 +92,17 @@ impl CategoryRepositoryTrait for CategoryRepository {
                 return Err(AppError::SqlxError(e));
             }
         };
-        
+
         info!(
             "Found {} categories out of total {}",
             categories.len(),
             total
         );
-        
+
         Ok((categories, total))
     }
 
-     async fn find_by_id(&self, id: i32) -> Result<Option<Category>, AppError> {
+    async fn find_by_id(&self, id: i32) -> Result<Option<Category>, AppError> {
         info!("Finding category by id: {}", id);
 
         let query = Query::select()
@@ -128,7 +123,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
             }
             Err(e) => {
                 error!("Error fetching category by ID {}: {}", id, e);
-                Err(AppError::SqlxError(e)) 
+                Err(AppError::SqlxError(e))
             }
         }
     }
@@ -140,7 +135,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .into_table(Categories::Table)
             .columns([Categories::Name])
             .values_panic([input.name.clone().into()])
-            .returning_all()  
+            .returning_all()
             .build_sqlx(PostgresQueryBuilder);
 
         let (sql, values) = insert;
@@ -151,7 +146,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .map_err(AppError::SqlxError)?;
 
         info!("New category inserted with ID: {}", result.id);
-        
+
         Ok(result)
     }
 
@@ -159,9 +154,9 @@ impl CategoryRepositoryTrait for CategoryRepository {
         let id = input
             .id
             .ok_or(AppError::ValidationError("ID is required".into()))?;
-    
+
         info!("Updating category ID: {} with name: {:?}", id, input.name);
-    
+
         let update = Query::update()
             .table(Categories::Table)
             .values(vec![(
@@ -170,23 +165,24 @@ impl CategoryRepositoryTrait for CategoryRepository {
             )])
             .and_where(Expr::col(Categories::Id).eq(id))
             .build_sqlx(PostgresQueryBuilder);
-    
+
         let (sql, values) = update;
-    
+
         let res = sqlx::query_with(&sql, values)
             .execute(&self.db_pool)
             .await?;
-    
+
         if res.rows_affected() == 0 {
             info!("No category found to update with ID: {}", id);
             return Err(AppError::SqlxError(sqlx::Error::RowNotFound));
         }
-    
+
         info!("Category ID: {} updated successfully", id);
-    
-        self.find_by_id(id).await?.ok_or(AppError::SqlxError(sqlx::Error::RowNotFound))
+
+        self.find_by_id(id)
+            .await?
+            .ok_or(AppError::SqlxError(sqlx::Error::RowNotFound))
     }
-    
 
     async fn delete(&self, id: i32) -> Result<(), AppError> {
         info!("Deleting category with ID: {}", id);
