@@ -121,7 +121,7 @@ impl AppRouter {
         let router =
             router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api.clone()));
 
-        let addr = format!("0.0.0.0:{port}" );
+        let addr = format!("0.0.0.0:{port}");
         let listener = TcpListener::bind(addr).await?;
         println!("Server running on http://{}", listener.local_addr()?);
 
