@@ -95,10 +95,7 @@ impl CommentServiceTrait for CommentService {
             .await
             .map_err(ErrorResponse::from)?;
 
-        let response = comments
-            .into_iter()
-            .map(CommentResponse::from)
-            .collect();
+        let response = comments.into_iter().map(CommentResponse::from).collect();
 
         self.add_completion_event(&cx, &Ok(()), "Comments retrieved successfully".to_string());
 
