@@ -45,6 +45,7 @@ impl Telemetry {
             .build();
 
         global::set_tracer_provider(provider.clone());
+
         provider
     }
 
@@ -55,10 +56,14 @@ impl Telemetry {
             .build()
             .expect("Failed to create metric exporter");
 
-        SdkMeterProvider::builder()
+        let metrics = SdkMeterProvider::builder()
             .with_resource(self.get_resource())
             .with_periodic_exporter(exporter)
-            .build()
+            .build();
+
+        global::set_meter_provider(metrics.clone());
+
+        metrics
     }
 
     pub fn init_logger(&self) -> SdkLoggerProvider {
