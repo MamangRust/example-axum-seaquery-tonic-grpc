@@ -89,13 +89,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
 
     let mut shutdown_errors = Vec::new();
     if let Err(e) = tracer_provider.shutdown() {
-        shutdown_errors.push(format!("tracer provider: {}", e));
+        shutdown_errors.push(format!("tracer provider: {e}"));
     }
     if let Err(e) = meter_provider.shutdown() {
-        shutdown_errors.push(format!("meter provider: {}", e));
+        shutdown_errors.push(format!("meter provider: {e}"));
     }
     if let Err(e) = logger_provider.shutdown() {
-        shutdown_errors.push(format!("logger provider: {}", e));
+        shutdown_errors.push(format!("logger provider: {e}"));
     }
     if !shutdown_errors.is_empty() {
         return Err(format!(
