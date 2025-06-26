@@ -69,12 +69,13 @@ impl CategoryRepositoryTrait for CategoryRepository {
         info!("Found {} categories", categories.len());
 
         let mut count_query = Query::select();
+
         count_query
             .expr(Func::count(Expr::col(Categories::Id)))
             .from(Categories::Table);
 
         if let Some(term) = &search {
-            count_query.and_where(Expr::col(Categories::Name).like(format!("{term}%" )));
+            count_query.and_where(Expr::col(Categories::Name).like(format!("{term}%")));
         }
 
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
@@ -93,10 +94,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
             }
         };
 
-        info!(
-            "Found {} categories out of total {total}",
-            categories.len(),
-        );
+        info!("Found {} categories out of total {total}", categories.len(),);
 
         Ok((categories, total))
     }
@@ -121,7 +119,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
                 Ok(result)
             }
             Err(e) => {
-                error!("Error fetching category by ID {id}: {e}" );
+                error!("Error fetching category by ID {id}: {e}");
                 Err(AppError::SqlxError(e))
             }
         }
@@ -154,7 +152,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .id
             .ok_or(AppError::ValidationError("ID is required".into()))?;
 
-        info!("Updating category ID: {id} with name: {:?}",  input.name);
+        info!("Updating category ID: {id} with name: {:?}", input.name);
 
         let update = Query::update()
             .table(Categories::Table)

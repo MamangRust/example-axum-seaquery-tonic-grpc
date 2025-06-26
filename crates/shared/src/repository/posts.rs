@@ -48,8 +48,7 @@ impl PostsRepositoryTrait for PostRepository {
             .limit(page_size as u64);
 
         if let Some(ref s) = search {
-            select_query
-                .and_where(Expr::col((Posts::Table, Posts::Title)).like(format!("%{s}%")));
+            select_query.and_where(Expr::col((Posts::Table, Posts::Title)).like(format!("%{s}%")));
         }
 
         let (sql, values) = select_query.build_sqlx(PostgresQueryBuilder);

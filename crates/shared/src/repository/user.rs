@@ -42,6 +42,7 @@ impl UserRepositoryTrait for UserRepository {
         let offset = (page - 1) * page_size;
 
         let mut select_query = Query::select();
+
         select_query
             .columns([
                 Users::Id,
@@ -56,7 +57,7 @@ impl UserRepositoryTrait for UserRepository {
             .offset(offset as u64);
 
         if let Some(term) = &search {
-            select_query.and_where(Expr::col(Users::Email).like(format!("{term}%" )));
+            select_query.and_where(Expr::col(Users::Email).like(format!("{term}%")));
         }
 
         let (sql, values) = select_query.build_sqlx(PostgresQueryBuilder);
@@ -81,7 +82,7 @@ impl UserRepositoryTrait for UserRepository {
             .from(Users::Table);
 
         if let Some(term) = &search {
-            count_query.and_where(Expr::col(Users::Email).like(format!("{term}%" )));
+            count_query.and_where(Expr::col(Users::Email).like(format!("{term}%")));
         }
 
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
@@ -93,7 +94,7 @@ impl UserRepositoryTrait for UserRepository {
         let total = match total_result {
             Ok(count) => count.0,
             Err(e) => {
-                error!("Error counting users: {e}" );
+                error!("Error counting users: {e}");
                 return Err(AppError::SqlxError(e));
             }
         };

@@ -22,7 +22,6 @@ fn get_thread_count(pid: usize) -> Option<i64> {
     None
 }
 
-
 #[derive(Debug, Clone)]
 pub struct SystemMetrics {
     pub memory_alloc_bytes: Gauge,
