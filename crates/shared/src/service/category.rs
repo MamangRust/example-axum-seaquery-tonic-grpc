@@ -179,8 +179,7 @@ impl CategoryServiceTrait for CategoryService {
             }))
         } else {
             Err(ErrorResponse::from(AppError::NotFound(format!(
-                "Category with id {} not found",
-                id
+                "Category with id {id} not found",
             ))))
         }
     }

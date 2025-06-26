@@ -29,8 +29,8 @@ impl UserRepositoryTrait for UserRepository {
         search: Option<String>,
     ) -> Result<(Vec<User>, i64), AppError> {
         info!(
-            "Finding all users - page: {}, page_size: {}, search: {:?}",
-            page, page_size, search
+            "Finding all users - page: {page}, page_size: {page_size}, search: {:?}",
+            search
         );
 
         if page <= 0 || page_size <= 0 {
@@ -56,7 +56,7 @@ impl UserRepositoryTrait for UserRepository {
             .offset(offset as u64);
 
         if let Some(term) = &search {
-            select_query.and_where(Expr::col(Users::Email).like(format!("{}%", term)));
+            select_query.and_where(Expr::col(Users::Email).like(format!("{term}%" )));
         }
 
         let (sql, values) = select_query.build_sqlx(PostgresQueryBuilder);
@@ -68,7 +68,7 @@ impl UserRepositoryTrait for UserRepository {
         let users = match users_result {
             Ok(u) => u,
             Err(e) => {
-                error!("Error fetching users: {}", e);
+                error!("Error fetching users: {e}");
                 return Err(AppError::SqlxError(e));
             }
         };
@@ -81,7 +81,7 @@ impl UserRepositoryTrait for UserRepository {
             .from(Users::Table);
 
         if let Some(term) = &search {
-            count_query.and_where(Expr::col(Users::Email).like(format!("{}%", term)));
+            count_query.and_where(Expr::col(Users::Email).like(format!("{term}%" )));
         }
 
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
@@ -93,12 +93,12 @@ impl UserRepositoryTrait for UserRepository {
         let total = match total_result {
             Ok(count) => count.0,
             Err(e) => {
-                error!("Error counting users: {}", e);
+                error!("Error counting users: {e}" );
                 return Err(AppError::SqlxError(e));
             }
         };
 
-        info!("Found {} users out of total {}", users.len(), total);
+        info!("Found {} users out of total {total}", users.len());
 
         Ok((users, total))
     }

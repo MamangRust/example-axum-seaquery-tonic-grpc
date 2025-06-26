@@ -165,8 +165,7 @@ impl PostsServiceTrait for PostService {
             }))
         } else {
             Err(ErrorResponse::from(AppError::NotFound(format!(
-                "Posts with id {} not found",
-                post_id
+                "Posts with id {post_id} not found",
             ))))
         }
     }

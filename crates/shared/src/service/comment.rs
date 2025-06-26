@@ -143,8 +143,7 @@ impl CommentServiceTrait for CommentService {
             }))
         } else {
             Err(ErrorResponse::from(AppError::NotFound(format!(
-                "Comment with id {} not found",
-                id
+                "Comment with id {id} not found",
             ))))
         }
     }

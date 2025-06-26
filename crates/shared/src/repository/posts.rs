@@ -49,7 +49,7 @@ impl PostsRepositoryTrait for PostRepository {
 
         if let Some(ref s) = search {
             select_query
-                .and_where(Expr::col((Posts::Table, Posts::Title)).like(format!("%{}%", s)));
+                .and_where(Expr::col((Posts::Table, Posts::Title)).like(format!("%{s}%")));
         }
 
         let (sql, values) = select_query.build_sqlx(PostgresQueryBuilder);
@@ -64,7 +64,7 @@ impl PostsRepositoryTrait for PostRepository {
             .from(Posts::Table);
 
         if let Some(ref s) = search {
-            count_query.and_where(Expr::col((Posts::Table, Posts::Title)).like(format!("%{}%", s)));
+            count_query.and_where(Expr::col((Posts::Table, Posts::Title)).like(format!("%{s}%")));
         }
 
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
@@ -203,11 +203,11 @@ impl PostsRepositoryTrait for PostRepository {
             .await?;
 
         if result.rows_affected() == 0 {
-            info!("No posts found to delete with ID: {}", post_id);
+            info!("No posts found to delete with ID: {post_id}");
             return Err(AppError::SqlxError(sqlx::Error::RowNotFound));
         }
 
-        info!("posts ID: {} deleted successfully", post_id);
+        info!("posts ID: {post_id} deleted successfully");
         Ok(())
     }
 }

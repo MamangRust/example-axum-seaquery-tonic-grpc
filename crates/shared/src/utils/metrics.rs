@@ -9,7 +9,7 @@ use std::{
 use sysinfo::System;
 
 fn get_thread_count(pid: usize) -> Option<i64> {
-    let path = format!("/proc/{}/status", pid);
+    let path = format!("/proc/{pid}/status");
     if let Ok(contents) = fs::read_to_string(path) {
         for line in contents.lines() {
             if line.starts_with("Threads:") {
@@ -21,6 +21,7 @@ fn get_thread_count(pid: usize) -> Option<i64> {
     }
     None
 }
+
 
 #[derive(Debug, Clone)]
 pub struct SystemMetrics {

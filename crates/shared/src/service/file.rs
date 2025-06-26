@@ -43,7 +43,7 @@ impl FileServiceTrait for FileService {
 
         let today = Local::now().format("%Y-%m-%d").to_string();
         let unique_id = Uuid::new_v4();
-        let mut saved_file_name = format!("{}", unique_id);
+        let mut saved_file_name = format!("{unique_id}");
 
         if let Some(ext) = Path::new(&original_filename).extension() {
             saved_file_name.push('.');

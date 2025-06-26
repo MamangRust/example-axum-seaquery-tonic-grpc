@@ -30,8 +30,8 @@ pub struct ApiResponse<T> {
 impl<T: Serialize> fmt::Display for ApiResponse<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match serde_json::to_string(self) {
-            Ok(json) => write!(f, "{}", json),
-            Err(e) => write!(f, "Error serializing ApiResponse to JSON: {}", e),
+            Ok(json) => write!(f, "{json}"),
+            Err(e) => write!(f, "Error serializing ApiResponse to JSON: {e}"),
         }
     }
 }
@@ -47,8 +47,8 @@ pub struct ApiResponsePagination<T> {
 impl<T: Serialize> fmt::Display for ApiResponsePagination<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match serde_json::to_string(self) {
-            Ok(json) => write!(f, "{}", json),
-            Err(e) => write!(f, "Error serializing ApiResponse to JSON: {}", e),
+            Ok(json) => write!(f, "{json}" ),
+            Err(e) => write!(f, "Error serializing ApiResponse to JSON: {e}"),
         }
     }
 }
@@ -76,7 +76,7 @@ impl From<AppError> for ErrorResponse {
                 ("error".to_string(), "Token generation failed".to_string())
             }
             AppError::BcryptError(ref msg) => {
-                ("error".to_string(), format!("Bcrypt error: {}", msg))
+                ("error".to_string(), format!("Bcrypt error: {msg}"))
             }
             AppError::InvalidCredentials => {
                 ("error".to_string(), "Invalid credentials".to_string())

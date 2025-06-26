@@ -65,7 +65,7 @@ impl JwtConfig {
                 if let JwtError::ExpiredSignature = err.kind() {
                     Err(AppError::TokenExpiredError)
                 } else {
-                    eprintln!("Error decoding token: {:?}", err);
+                    eprintln!("Error decoding token: {err}");
                     Err(AppError::TokenValidationError)
                 }
             }

@@ -28,8 +28,8 @@ impl CategoryRepositoryTrait for CategoryRepository {
         search: Option<String>,
     ) -> Result<(Vec<Category>, i64), AppError> {
         info!(
-            "Finding all categories - page: {}, page_size: {}, search: {:?}",
-            page, page_size, search
+            "Finding all categories - page: {page}, page_size: {page_size}, search: {:?}",
+            search
         );
 
         if page <= 0 || page_size <= 0 {
@@ -61,7 +61,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
         let categories = match categories_result {
             Ok(cats) => cats,
             Err(e) => {
-                error!("Error fetching categories: {}", e);
+                error!("Error fetching categories: {e}");
                 return Err(AppError::SqlxError(e));
             }
         };
@@ -74,12 +74,12 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .from(Categories::Table);
 
         if let Some(term) = &search {
-            count_query.and_where(Expr::col(Categories::Name).like(format!("{}%", term)));
+            count_query.and_where(Expr::col(Categories::Name).like(format!("{term}%" )));
         }
 
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
 
-        debug!("Count SQL: {}", count_sql);
+        debug!("Count SQL: {count_sql}");
 
         let total_result = sqlx::query_as_with::<_, (i64,), _>(&count_sql, count_values)
             .fetch_one(&self.db_pool)
@@ -94,9 +94,8 @@ impl CategoryRepositoryTrait for CategoryRepository {
         };
 
         info!(
-            "Found {} categories out of total {}",
+            "Found {} categories out of total {total}",
             categories.len(),
-            total
         );
 
         Ok((categories, total))
@@ -122,7 +121,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
                 Ok(result)
             }
             Err(e) => {
-                error!("Error fetching category by ID {}: {}", id, e);
+                error!("Error fetching category by ID {id}: {e}" );
                 Err(AppError::SqlxError(e))
             }
         }
@@ -155,7 +154,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .id
             .ok_or(AppError::ValidationError("ID is required".into()))?;
 
-        info!("Updating category ID: {} with name: {:?}", id, input.name);
+        info!("Updating category ID: {id} with name: {:?}",  input.name);
 
         let update = Query::update()
             .table(Categories::Table)
@@ -173,11 +172,11 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .await?;
 
         if res.rows_affected() == 0 {
-            info!("No category found to update with ID: {}", id);
+            info!("No category found to update with ID: {id}");
             return Err(AppError::SqlxError(sqlx::Error::RowNotFound));
         }
 
-        info!("Category ID: {} updated successfully", id);
+        info!("Category ID: {id} updated successfully");
 
         self.find_by_id(id)
             .await?
@@ -199,11 +198,11 @@ impl CategoryRepositoryTrait for CategoryRepository {
             .await?;
 
         if result.rows_affected() == 0 {
-            info!("No category found to delete with ID: {}", id);
+            info!("No category found to delete with ID: {id}");
             return Err(AppError::SqlxError(sqlx::Error::RowNotFound));
         }
 
-        info!("Category ID: {} deleted successfully", id);
+        info!("Category ID: {id} deleted successfully");
         Ok(())
     }
 }

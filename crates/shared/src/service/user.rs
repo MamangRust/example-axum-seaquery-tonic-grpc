@@ -210,8 +210,7 @@ impl UserServiceTrait for UserService {
             }))
         } else {
             Err(ErrorResponse::from(AppError::NotFound(format!(
-                "User with id {} not found",
-                id
+                "User with id {id} not found",
             ))))
         }
     }
