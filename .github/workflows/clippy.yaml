@@ -10,11 +10,43 @@ on:
 jobs:
   clippy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: clippy
+
+      - name: Lint with Clippy
+        run: cargo clippy -- -D warnings
+name: Lint with Clippy
+
+on:
+  push:
+    paths:
+      - '**/*.rs'
+      - 'Cargo.*'
+  pull_request:
+
+jobs:
+  clippy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+
       - name: Lint with Clippy
         run: cargo clippy -- -D warnings

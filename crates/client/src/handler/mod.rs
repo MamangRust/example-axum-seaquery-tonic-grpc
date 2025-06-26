@@ -6,7 +6,13 @@ mod user;
 
 use std::sync::Arc;
 
-use axum::extract::DefaultBodyLimit;
+use axum::body::Body;
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use prometheus_client::encoding::text::encode;
 use tokio::net::TcpListener;
 use tower_http::limit::RequestBodyLimitLayer;
 use utoipa::openapi::security::SecurityScheme;
@@ -76,21 +82,41 @@ impl Modify for SecurityAddon {
     }
 }
 
+pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut buffer = String::new();
+    encode(&mut buffer, &state.registry).unwrap();
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            CONTENT_TYPE,
+            "application/openmetrics-text; version=1.0.0; charset=utf-8",
+        )
+        .body(Body::from(buffer))
+        .unwrap()
+}
+
 pub struct AppRouter;
 
 impl AppRouter {
     pub async fn serve(port: u16, app_state: AppState) -> Result<(), Box<dyn std::error::Error>> {
         let shared_state = Arc::new(app_state);
 
-        let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
-            .merge(auth_routes(shared_state.clone()))
-            .merge(category_routes(shared_state.clone()))
-            .merge(comment_routes(shared_state.clone()))
-            .merge(post_routes(shared_state.clone()))
-            .merge(user_routes(shared_state.clone()))
+        let mut router = OpenApiRouter::with_openapi(ApiDoc::openapi())
+            .route("/metrics", get(metrics_handler))
+            .with_state(shared_state.clone());
+
+        router = router.merge(auth_routes(shared_state.clone()));
+        router = router.merge(category_routes(shared_state.clone()));
+        router = router.merge(comment_routes(shared_state.clone()));
+        router = router.merge(post_routes(shared_state.clone()));
+        router = router.merge(user_routes(shared_state.clone()));
+
+        let router = router
             .layer(DefaultBodyLimit::disable())
-            .layer(RequestBodyLimitLayer::new(250 * 1024 * 1024))
-            .split_for_parts();
+            .layer(RequestBodyLimitLayer::new(250 * 1024 * 1024));
+
+        let (router, api) = router.split_for_parts();
 
         let router =
             router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api.clone()));
@@ -99,7 +125,7 @@ impl AppRouter {
         let listener = TcpListener::bind(addr).await?;
         println!("Server running on http://{}", listener.local_addr()?);
 
-        axum::serve(listener, router).await.unwrap();
+        axum::serve(listener, router).await?;
         Ok(())
     }
 }

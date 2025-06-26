@@ -1,19 +1,40 @@
-use axum::routing::get;
+use axum::{
+    body::Body,
+    extract::State,
+    http::{StatusCode, header::CONTENT_TYPE},
+    response::{IntoResponse, Response},
+    routing::get,
+};
 use genproto::{
     auth::auth_service_server::AuthServiceServer,
     category::category_service_server::CategoryServiceServer,
     comment::comment_service_server::CommentServiceServer,
     post::posts_service_server::PostsServiceServer, user::user_service_server::UserServiceServer,
 };
+use prometheus_client::encoding::text::encode;
 use shared::{
     config::{Config, ConnectionManager},
     state::AppState,
-    utils::{Telemetry, init_logger, metrics_handler},
+    utils::{Telemetry, init_logger},
 };
 use std::{error::Error, sync::Arc};
 use tonic::transport::Server;
 
 mod service;
+
+pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut buffer = String::new();
+    encode(&mut buffer, &state.registry).unwrap();
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            CONTENT_TYPE,
+            "application/openmetrics-text; version=1.0.0; charset=utf-8",
+        )
+        .body(Body::from(buffer))
+        .unwrap()
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {

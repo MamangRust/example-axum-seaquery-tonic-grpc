@@ -1,0 +1,65 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: "otel-collector"
+          scrape_interval: 5s
+          static_configs:
+            - targets: ["localhost:8889"]
+
+        - job_name: "blog-client-service"
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["blog-client:5000"]
+              labels:
+                application: "blog-client-grpc-service"
+        
+        - job_name: "blog-server-service"
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["blog-server:50051"]
+              labels:
+                application: "blog-server-grpc-service"
+
+processors:
+  batch:
+
+exporters:
+  otlp:
+    endpoint: "jaeger:4317"  
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+
+extensions:
+  health_check:
+  pprof:
+  zpages:
+
+service:
+  extensions: [health_check, pprof, zpages]
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]
+
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp]

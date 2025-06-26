@@ -1,14 +1,5 @@
-use axum::{
-    body::Body,
-    extract::State,
-    http::{StatusCode, header::CONTENT_TYPE},
-    response::{IntoResponse, Response},
-};
+use prometheus_client::metrics::{counter::Counter, family::Family, gauge::Gauge};
 use prometheus_client::registry::Registry;
-use prometheus_client::{
-    encoding::text::encode,
-    metrics::{counter::Counter, family::Family, gauge::Gauge},
-};
 use prometheus_client_derive_encode::{EncodeLabelSet, EncodeLabelValue};
 use std::{
     fs,
@@ -16,8 +7,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use sysinfo::System;
-
-use crate::state::AppState;
 
 fn get_thread_count(pid: usize) -> Option<i64> {
     let path = format!("/proc/{}/status", pid);
@@ -161,18 +150,4 @@ pub async fn run_metrics_collector(system_metrics: Arc<SystemMetrics>) {
         interval.tick().await;
         system_metrics.update_metrics().await;
     }
-}
-
-pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let mut buffer = String::new();
-    encode(&mut buffer, &state.registry).unwrap();
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(
-            CONTENT_TYPE,
-            "application/openmetrics-text; version=1.0.0; charset=utf-8",
-        )
-        .body(Body::from(buffer))
-        .unwrap()
 }
