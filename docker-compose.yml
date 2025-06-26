@@ -8,9 +8,9 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: example_sea_query
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_blog_tonic-data:/var/lib/postgresql/data
     networks:
-      - app_example_sea_query
+      - app_blog_tonic
     ports:
       - "5432:5432"
     healthcheck:
@@ -18,10 +18,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
   blog-client:
     image: ghcr.io/mamangrust/example-seaquery-tonic-grpc/blog-client:latest
     container_name: blog-client
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       otel-collector:
         condition: service_started
@@ -38,6 +41,8 @@ services:
     image: ghcr.io/mamangrust/example-seaquery-tonic-grpc/blog-server:latest
     container_name: blog-server
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - 50051:50051
     depends_on:
@@ -73,6 +78,8 @@ services:
   prometheus:
     image: prom/prometheus
     container_name: prometheus-blog-tonic
+    ports:
+      - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     restart: unless-stopped
@@ -114,3 +121,4 @@ networks:
 
 volumes:
   grafana-blog-tonic-data:
+  postgres_blog_tonic-data:
