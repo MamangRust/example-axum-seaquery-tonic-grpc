@@ -358,8 +358,7 @@ impl CategoryServiceTrait for CategoryService {
                     &tracing_ctx,
                     method,
                     &format!(
-                        "Category updated successfully (ID: {}, Name: {})",
-                        category_id, category_name
+                        "Category updated successfully (ID: {category_id}, Name: {category_name})",
                     ),
                 )
                 .await;
@@ -376,8 +375,8 @@ impl CategoryServiceTrait for CategoryService {
                     &tracing_ctx,
                     method,
                     &format!(
-                        "Failed to update category (ID: {}, Name: {}): {}",
-                        category_id, category_name, error_response.message
+                        "Failed to update category (ID: {category_id}, Name: {category_name}): {}",
+                        error_response.message
                     ),
                 )
                 .await;
