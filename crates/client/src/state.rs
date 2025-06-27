@@ -32,7 +32,7 @@ impl AppState {
         let channel = Channel::from_static("http://blog-server:50051")
             .connect()
             .await
-            .map_err(|e| format!("gRPC connection failed: {}", e))?;
+            .map_err(|e| format!("gRPC connection failed: {e}"))?;
 
         let clients = GrpcClients::init(channel).await;
 
