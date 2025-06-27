@@ -1,3 +1,4 @@
+use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::metrics::{counter::Counter, family::Family, gauge::Gauge};
 use prometheus_client::registry::Registry;
 use prometheus_client_derive_encode::{EncodeLabelSet, EncodeLabelValue};
@@ -128,19 +129,48 @@ pub enum Method {
     Delete,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-pub struct MethodLabels {
-    pub method: Method,
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum Status {
+    Success,
+    Error,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct Labels {
+    pub method: Method,
+    pub status: Status,
+}
+
+#[derive(Clone, Debug)]
 pub struct Metrics {
-    pub requests: Family<MethodLabels, Counter>,
+    pub request_counter: Family<Labels, Counter>,
+    pub request_duration: Family<Labels, Histogram>,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Metrics {
-    pub fn inc_requests(&self, method: Method) {
-        self.requests.get_or_create(&MethodLabels { method }).inc();
+    pub fn new() -> Self {
+        Self {
+            request_counter: Family::default(),
+            request_duration: Family::new_with_constructor(|| {
+                Histogram::new(vec![
+                    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+                ])
+            }),
+        }
+    }
+
+    pub fn record(&self, method: Method, status: Status, duration_secs: f64) {
+        let labels = Labels { method, status };
+        self.request_counter.get_or_create(&labels).inc();
+        self.request_duration
+            .get_or_create(&labels)
+            .observe(duration_secs);
     }
 }
 

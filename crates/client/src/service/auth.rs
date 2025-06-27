@@ -5,18 +5,20 @@ use genproto::auth::{
 use opentelemetry::{
     Context, KeyValue,
     global::{self, BoxedTracer},
-    trace::{SpanKind, TraceContextExt, Tracer},
+    trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
+use prometheus_client::registry::Registry;
 use shared::{
     domain::{
         ApiResponse, ErrorResponse, LoginRequest as LoginDomainRequest,
         RegisterRequest as RegisterDomainRequest, UserResponse,
     },
-    utils::{MetadataInjector, Method, Metrics},
+    utils::{MetadataInjector, Method, Metrics, Status as StatusUtils, TracingContext},
 };
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tonic::{Request, Status, transport::Channel};
+use tokio::{sync::Mutex, time::Instant};
+use tonic::{Request, transport::Channel};
+use tracing::{error, info};
 
 use crate::abstract_trait::AuthServiceTrait;
 
@@ -27,10 +29,23 @@ pub struct AuthService {
 }
 
 impl AuthService {
-    pub fn new(
+    pub async fn new(
         client: Arc<Mutex<AuthServiceClient<Channel>>>,
         metrics: Arc<Mutex<Metrics>>,
     ) -> Self {
+        let mut registry = Registry::default();
+
+        registry.register(
+            "auth_handler_request_counter",
+            "Total number of requests to the AuthService",
+            metrics.lock().await.request_counter.clone(),
+        );
+        registry.register(
+            "auth_handler_request_duration",
+            "Histogram of request durations for the AuthService",
+            metrics.lock().await.request_duration.clone(),
+        );
+
         Self { client, metrics }
     }
 
@@ -44,19 +59,82 @@ impl AuthService {
         });
     }
 
-    fn add_completion_event<T>(
-        &self,
-        cx: &Context,
-        result: &Result<T, Status>,
-        event_name: String,
-    ) {
-        let status = match result {
-            Ok(_) => "OK".to_string(),
-            Err(status) => status.code().to_string(),
-        };
+    fn start_tracing(&self, operation_name: &str, attributes: Vec<KeyValue>) -> TracingContext {
+        let start_time = Instant::now();
+        let tracer = self.get_tracer();
+        let mut span = tracer
+            .span_builder(operation_name.to_string())
+            .with_kind(SpanKind::Server)
+            .with_attributes(attributes)
+            .start(&tracer);
 
-        cx.span()
-            .add_event(event_name, vec![KeyValue::new("status", status)]);
+        info!("Starting operation: {}", operation_name);
+
+        span.add_event(
+            "Operation started",
+            vec![
+                KeyValue::new("operation", operation_name.to_string()),
+                KeyValue::new("timestamp", start_time.elapsed().as_secs_f64().to_string()),
+            ],
+        );
+
+        let cx = Context::current_with_span(span);
+        TracingContext { cx, start_time }
+    }
+
+    async fn complete_tracing_success(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, true, message)
+            .await;
+    }
+
+    async fn complete_tracing_error(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        error_message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, false, error_message)
+            .await;
+    }
+
+    async fn complete_tracing_internal(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        is_success: bool,
+        message: &str,
+    ) {
+        let status_str = if is_success { "SUCCESS" } else { "ERROR" };
+        let status = if is_success {
+            StatusUtils::Success
+        } else {
+            StatusUtils::Error
+        };
+        let elapsed = tracing_ctx.start_time.elapsed().as_secs_f64();
+
+        tracing_ctx.cx.span().add_event(
+            "Operation completed",
+            vec![
+                KeyValue::new("status", status_str),
+                KeyValue::new("duration_secs", elapsed.to_string()),
+                KeyValue::new("message", message.to_string()),
+            ],
+        );
+
+        if is_success {
+            info!("Operation completed successfully: {}", message);
+        } else {
+            error!("Operation failed: {}", message);
+        }
+
+        self.metrics.lock().await.record(method, status, elapsed);
+
+        tracing_ctx.cx.span().end();
     }
 }
 
@@ -66,18 +144,16 @@ impl AuthServiceTrait for AuthService {
         &self,
         request_data: RegisterDomainRequest,
     ) -> Result<ApiResponse<UserResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Post);
-
-        let tracer = self.get_tracer();
-        let span = tracer
-            .span_builder("RegisterUser")
-            .with_kind(SpanKind::Client)
-            .with_attributes([
+        let method = Method::Post;
+        let tracing_ctx = self.start_tracing(
+            "RegisterUser",
+            vec![
                 KeyValue::new("component", "auth"),
+                KeyValue::new("operation", "register"),
                 KeyValue::new("user.email", request_data.email.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+                KeyValue::new("user.firstname", request_data.firstname.clone()),
+            ],
+        );
 
         let mut request = Request::new(RegisterRequest {
             firstname: request_data.firstname.clone(),
@@ -86,112 +162,172 @@ impl AuthServiceTrait for AuthService {
             password: request_data.password.clone(),
         });
 
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
         let result = {
             let mut client = self.client.lock().await;
             client.register_user(request).await
         };
 
-        self.add_completion_event(&cx, &result, "register_user_response".to_string());
-
-        result
-            .map_err(|status| ErrorResponse {
-                status: status.code().to_string(),
-                message: status.message().to_string(),
-            })
-            .map(|resp| {
+        match result {
+            Ok(resp) => {
                 let inner = resp.into_inner();
-                ApiResponse {
+                let response = ApiResponse {
                     status: inner.status,
                     message: inner.message,
                     data: inner.data.into(),
-                }
-            })
+                };
+
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    &format!("User {} registered successfully", request_data.email),
+                )
+                .await;
+
+                Ok(response)
+            }
+            Err(status) => {
+                let error_response = ErrorResponse {
+                    status: status.code().to_string(),
+                    message: status.message().to_string(),
+                };
+
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!(
+                        "Failed to register user {}: {}",
+                        request_data.email, error_response.message
+                    ),
+                )
+                .await;
+
+                Err(error_response)
+            }
+        }
     }
 
     async fn login(
         &self,
         request_data: LoginDomainRequest,
     ) -> Result<ApiResponse<String>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Post);
-
-        let tracer = self.get_tracer();
-        let span = tracer
-            .span_builder("LoginUser")
-            .with_kind(SpanKind::Client)
-            .with_attributes([
+        let method = Method::Post;
+        let tracing_ctx = self.start_tracing(
+            "LoginUser",
+            vec![
                 KeyValue::new("component", "auth"),
+                KeyValue::new("operation", "login"),
                 KeyValue::new("user.email", request_data.email.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(LoginRequest {
             email: request_data.email.clone(),
             password: request_data.password.clone(),
         });
 
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
         let result = {
             let mut client = self.client.lock().await;
             client.login_user(request).await
         };
 
-        self.add_completion_event(&cx, &result, "login_user_response".to_string());
-
-        result
-            .map(|resp| {
+        match result {
+            Ok(resp) => {
                 let inner = resp.into_inner();
-                ApiResponse {
+                let response = ApiResponse {
                     status: inner.status,
                     message: inner.message,
                     data: inner.data,
-                }
-            })
-            .map_err(|status| ErrorResponse {
-                status: status.code().to_string(),
-                message: status.message().to_string(),
-            })
+                };
+
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    &format!("User {} logged in successfully", request_data.email),
+                )
+                .await;
+
+                Ok(response)
+            }
+            Err(status) => {
+                let error_response = ErrorResponse {
+                    status: status.code().to_string(),
+                    message: status.message().to_string(),
+                };
+
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!(
+                        "Failed to login user {}: {}",
+                        request_data.email, error_response.message
+                    ),
+                )
+                .await;
+
+                Err(error_response)
+            }
+        }
     }
 
     async fn get_me(&self, id: i32) -> Result<ApiResponse<UserResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Get);
-
-        let tracer = self.get_tracer();
-        let span = tracer
-            .span_builder("GetMe")
-            .with_kind(SpanKind::Client)
-            .with_attributes([
+        let method = Method::Get;
+        let tracing_ctx = self.start_tracing(
+            "GetUserProfile",
+            vec![
                 KeyValue::new("component", "user"),
-                KeyValue::new("user.id", id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+                KeyValue::new("operation", "get_me"),
+                KeyValue::new("user.id", id as i64),
+            ],
+        );
 
         let mut request = Request::new(GetMeRequest { id });
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
         let result = {
             let mut client = self.client.lock().await;
             client.get_me(request).await
         };
 
-        self.add_completion_event(&cx, &result, "get_me_response".to_string());
-
-        result
-            .map(|resp| {
+        match result {
+            Ok(resp) => {
                 let inner = resp.into_inner();
-                ApiResponse {
+                let response = ApiResponse {
                     status: inner.status,
                     message: inner.message,
                     data: inner.data.into(),
-                }
-            })
-            .map_err(|status| ErrorResponse {
-                status: status.code().to_string(),
-                message: status.message().to_string(),
-            })
+                };
+
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    &format!("User profile {} retrieved successfully", id),
+                )
+                .await;
+
+                Ok(response)
+            }
+            Err(status) => {
+                let error_response = ErrorResponse {
+                    status: status.code().to_string(),
+                    message: status.message().to_string(),
+                };
+
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!(
+                        "Failed to retrieve user profile {}: {}",
+                        id, error_response.message
+                    ),
+                )
+                .await;
+
+                Err(error_response)
+            }
+        }
     }
 }

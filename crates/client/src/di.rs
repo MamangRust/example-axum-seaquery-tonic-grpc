@@ -38,7 +38,7 @@ impl std::fmt::Debug for DependenciesInject {
 }
 
 impl DependenciesInject {
-    pub fn new(
+    pub async fn new(
         auth_client: Arc<Mutex<AuthServiceClient<Channel>>>,
         user_client: Arc<Mutex<UserServiceClient<Channel>>>,
         category_client: Arc<Mutex<CategoryServiceClient<Channel>>>,
@@ -46,14 +46,17 @@ impl DependenciesInject {
         comment_client: Arc<Mutex<CommentServiceClient<Channel>>>,
         metrics: Arc<Mutex<Metrics>>,
     ) -> Self {
-        let auth_service: DynAuthService = Arc::new(AuthService::new(auth_client, metrics.clone()));
-        let user_service: DynUserService = Arc::new(UserService::new(user_client, metrics.clone()));
+        let auth_service: DynAuthService =
+            Arc::new(AuthService::new(auth_client, metrics.clone()).await);
+        let user_service: DynUserService =
+            Arc::new(UserService::new(user_client, metrics.clone()).await);
+
         let category_service: DynCategoryService =
-            Arc::new(CategoryService::new(category_client, metrics.clone()));
+            Arc::new(CategoryService::new(category_client, metrics.clone()).await);
         let post_service: DynPostsService =
-            Arc::new(PostsService::new(post_client, metrics.clone()));
+            Arc::new(PostsService::new(post_client, metrics.clone()).await);
         let comment_service: DynCommentService =
-            Arc::new(CommentService::new(comment_client, metrics.clone()));
+            Arc::new(CommentService::new(comment_client, metrics.clone()).await);
 
         let file_service: DynFileService = Arc::new(FileService::default());
 

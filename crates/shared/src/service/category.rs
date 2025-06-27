@@ -4,18 +4,19 @@ use crate::{
         ApiResponse, ApiResponsePagination, CategoryResponse, CreateCategoryRequest, ErrorResponse,
         FindAllCategoryRequest, Pagination, UpdateCategoryRequest,
     },
-    utils::{AppError, MetadataInjector, Method, Metrics},
+    utils::{MetadataInjector, Method, Metrics, Status as StatusUtils, TracingContext},
 };
 use async_trait::async_trait;
 use opentelemetry::{
     Context, KeyValue,
     global::{self, BoxedTracer},
-    trace::{SpanKind, TraceContextExt, Tracer},
+    trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
+use prometheus_client::registry::Registry;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tonic::{Request, Status};
-use tracing::info;
+use tokio::{sync::Mutex, time::Instant};
+use tonic::Request;
+use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct CategoryService {
@@ -32,7 +33,20 @@ impl std::fmt::Debug for CategoryService {
 }
 
 impl CategoryService {
-    pub fn new(repository: DynCategoryRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
+    pub async fn new(repository: DynCategoryRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
+        let mut registry = Registry::default();
+
+        registry.register(
+            "category_service_request_counter",
+            "Total number of requests to the CategoryService",
+            metrics.lock().await.request_counter.clone(),
+        );
+        registry.register(
+            "category_service_request_duration",
+            "Histogram of request durations for the CategoryService",
+            metrics.lock().await.request_duration.clone(),
+        );
+
         Self {
             repository,
             metrics,
@@ -49,25 +63,82 @@ impl CategoryService {
         });
     }
 
-    fn add_completion_event<T>(
-        &self,
-        cx: &Context,
-        result: &Result<T, Status>,
-        event_name: String,
-    ) {
-        let status = match result {
-            Ok(_) => "OK",
-            Err(status) => match status.code() {
-                tonic::Code::Ok => "OK",
-                tonic::Code::NotFound => "NOT_FOUND",
-                tonic::Code::InvalidArgument => "INVALID_ARGUMENT",
-                tonic::Code::Internal => "INTERNAL_ERROR",
-                _ => "UNKNOWN_ERROR",
-            },
-        };
+    fn start_tracing(&self, operation_name: &str, attributes: Vec<KeyValue>) -> TracingContext {
+        let start_time = Instant::now();
+        let tracer = self.get_tracer();
+        let mut span = tracer
+            .span_builder(operation_name.to_string())
+            .with_kind(SpanKind::Server)
+            .with_attributes(attributes)
+            .start(&tracer);
 
-        cx.span()
-            .add_event(event_name, vec![KeyValue::new("status", status)]);
+        info!("Starting operation: {}", operation_name);
+
+        span.add_event(
+            "Operation started",
+            vec![
+                KeyValue::new("operation", operation_name.to_string()),
+                KeyValue::new("timestamp", start_time.elapsed().as_secs_f64().to_string()),
+            ],
+        );
+
+        let cx = Context::current_with_span(span);
+        TracingContext { cx, start_time }
+    }
+
+    async fn complete_tracing_success(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, true, message)
+            .await;
+    }
+
+    async fn complete_tracing_error(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        error_message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, false, error_message)
+            .await;
+    }
+
+    async fn complete_tracing_internal(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        is_success: bool,
+        message: &str,
+    ) {
+        let status_str = if is_success { "SUCCESS" } else { "ERROR" };
+        let status = if is_success {
+            StatusUtils::Success
+        } else {
+            StatusUtils::Error
+        };
+        let elapsed = tracing_ctx.start_time.elapsed().as_secs_f64();
+
+        tracing_ctx.cx.span().add_event(
+            "Operation completed",
+            vec![
+                KeyValue::new("status", status_str),
+                KeyValue::new("duration_secs", elapsed.to_string()),
+                KeyValue::new("message", message.to_string()),
+            ],
+        );
+
+        if is_success {
+            info!("Operation completed successfully: {}", message);
+        } else {
+            error!("Operation failed: {}", message);
+        }
+
+        self.metrics.lock().await.record(method, status, elapsed);
+
+        tracing_ctx.cx.span().end();
     }
 }
 
@@ -77,9 +148,7 @@ impl CategoryServiceTrait for CategoryService {
         &self,
         req: FindAllCategoryRequest,
     ) -> Result<ApiResponsePagination<Vec<CategoryResponse>>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Get);
-
-        let tracer = self.get_tracer();
+        let method = Method::Get;
 
         let page = if req.page > 0 { req.page } else { 1 };
         let page_size = if req.page_size > 0 { req.page_size } else { 10 };
@@ -89,98 +158,115 @@ impl CategoryServiceTrait for CategoryService {
             Some(req.search.clone())
         };
 
-        let span = tracer
-            .span_builder("GetCategories")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "GetCategories",
+            vec![
                 KeyValue::new("component", "category"),
                 KeyValue::new("page", page.to_string()),
                 KeyValue::new("page_size", page_size.to_string()),
-                KeyValue::new("search", search.clone().unwrap_or("".to_string())),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+                KeyValue::new("search", search.clone().unwrap_or_default()),
+            ],
+        );
 
         let mut request = Request::new(FindAllCategoryRequest {
             page,
             page_size,
-            search: search.clone().unwrap_or("".to_string()),
+            search: search.clone().unwrap_or_default(),
         });
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.find_all(page, page_size, search).await {
+            Ok((categories, total_items)) => {
+                info!("Found {} categories", categories.len());
 
-        let (categories, total_items) = self
-            .repository
-            .find_all(page, page_size, search)
-            .await
-            .map_err(ErrorResponse::from)?;
+                let total_pages = (total_items as f64 / page_size as f64).ceil() as i32;
+                let category_responses =
+                    categories.into_iter().map(CategoryResponse::from).collect();
 
-        info!("Found {} categories", categories.len());
+                let response = ApiResponsePagination {
+                    status: "success".to_string(),
+                    message: "Categories retrieved successfully".to_string(),
+                    data: category_responses,
+                    pagination: Pagination {
+                        page,
+                        page_size,
+                        total_items,
+                        total_pages,
+                    },
+                };
 
-        let total_pages = (total_items as f64 / page_size as f64).ceil() as i32;
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    "Categories retrieved successfully",
+                )
+                .await;
 
-        let category_responses: Vec<CategoryResponse> =
-            categories.into_iter().map(CategoryResponse::from).collect();
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Failed to retrieve categories: {}", err),
+                )
+                .await;
 
-        self.add_completion_event(
-            &cx,
-            &Ok(()),
-            "Categories retrieved successfully".to_string(),
-        );
-
-        Ok(ApiResponsePagination {
-            status: "success".to_string(),
-            message: "Categories retrieved successfully".to_string(),
-            data: category_responses,
-            pagination: Pagination {
-                page,
-                page_size,
-                total_items,
-                total_pages,
-            },
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn get_category(
         &self,
         id: i32,
     ) -> Result<Option<ApiResponse<CategoryResponse>>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Get);
+        let method = Method::Get;
 
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("GetCategory")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "GetCategory",
+            vec![
                 KeyValue::new("component", "category"),
                 KeyValue::new("id", id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(id);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.find_by_id(id).await {
+            Ok(Some(category)) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Category retrieved successfully".to_string(),
+                    data: CategoryResponse::from(category),
+                };
 
-        let category = self
-            .repository
-            .find_by_id(id)
-            .await
-            .map_err(ErrorResponse::from)?;
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    "Category retrieved successfully",
+                )
+                .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Category retrieved successfully".to_string());
+                Ok(Some(response))
+            }
+            Ok(None) => {
+                self.complete_tracing_error(&tracing_ctx, method, "Category not found")
+                    .await;
 
-        if let Some(category) = category {
-            Ok(Some(ApiResponse {
-                status: "success".to_string(),
-                message: "Category retrieved successfully".to_string(),
-                data: CategoryResponse::from(category),
-            }))
-        } else {
-            Err(ErrorResponse::from(AppError::NotFound(format!(
-                "Category with id {id} not found",
-            ))))
+                Ok(None)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Error retrieving category: {}", err),
+                )
+                .await;
+
+                Err(ErrorResponse::from(err))
+            }
         }
     }
 
@@ -188,111 +274,136 @@ impl CategoryServiceTrait for CategoryService {
         &self,
         input: &CreateCategoryRequest,
     ) -> Result<ApiResponse<CategoryResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Post);
+        let method = Method::Post;
 
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("CreateCategory")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "CreateCategory",
+            vec![
                 KeyValue::new("component", "category"),
                 KeyValue::new("category.name", input.name.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(input.clone());
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.create(input).await {
+            Ok(category) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Category created successfully".to_string(),
+                    data: CategoryResponse::from(category),
+                };
 
-        self.add_completion_event(&cx, &Ok(()), "Category created successfully".to_string());
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    "Category created successfully",
+                )
+                .await;
 
-        let category = self
-            .repository
-            .create(input)
-            .await
-            .map_err(ErrorResponse::from)?;
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Category creation failed: {}", err),
+                )
+                .await;
 
-        info!("Category created: {:#?}", category);
-
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Category created successfully".to_string(),
-            data: CategoryResponse::from(category),
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn update_category(
         &self,
         input: &UpdateCategoryRequest,
     ) -> Result<Option<ApiResponse<CategoryResponse>>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Put);
+        let method = Method::Put;
 
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("UpdateCategory")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "UpdateCategory",
+            vec![
                 KeyValue::new("component", "category"),
-                KeyValue::new(
-                    "category.name",
-                    input.name.clone().unwrap_or("".to_string()),
-                ),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+                KeyValue::new("category.name", input.name.clone().unwrap_or_default()),
+            ],
+        );
 
         let mut request = Request::new(input.clone());
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.update(input).await {
+            Ok(category) => {
+                let response = Some(ApiResponse {
+                    status: "success".to_string(),
+                    message: "Category updated successfully".to_string(),
+                    data: CategoryResponse::from(category),
+                });
 
-        let category = self
-            .repository
-            .update(input)
-            .await
-            .map_err(ErrorResponse::from)?;
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    "Category updated successfully",
+                )
+                .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Category updated successfully".to_string());
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Category update failed: {}", err),
+                )
+                .await;
 
-        Ok(Some(ApiResponse {
-            status: "success".to_string(),
-            message: "Category updated successfully".to_string(),
-            data: CategoryResponse::from(category),
-        }))
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn delete_category(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Delete);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("DeleteCategory")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let method = Method::Delete;
+        let tracing_ctx = self.start_tracing(
+            "DeleteCategory",
+            vec![
                 KeyValue::new("component", "category"),
                 KeyValue::new("id", id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(id);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.delete(id).await {
+            Ok(_) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Category deleted successfully".to_string(),
+                    data: (),
+                };
 
-        self.repository
-            .delete(id)
-            .await
-            .map_err(ErrorResponse::from)?;
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    "Category deleted successfully",
+                )
+                .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Category deleted successfully".to_string());
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Failed to delete category: {}", err),
+                )
+                .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Category deleted successfully".to_string(),
-            data: (),
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 }

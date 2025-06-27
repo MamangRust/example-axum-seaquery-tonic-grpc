@@ -39,7 +39,7 @@ impl std::fmt::Debug for DependenciesInject {
 }
 
 impl DependenciesInject {
-    pub fn new(
+    pub async fn new(
         pool: ConnectionPool,
         hashing: Hashing,
         jwt_config: JwtConfig,
@@ -47,31 +47,29 @@ impl DependenciesInject {
     ) -> Self {
         let category_repository =
             Arc::new(CategoryRepository::new(pool.clone())) as DynCategoryRepository;
-
-        let category_service = Arc::new(CategoryService::new(category_repository, metrics.clone()))
-            as DynCategoryService;
-
         let post_repository = Arc::new(PostRepository::new(pool.clone())) as DynPostsRepository;
-
-        let post_service =
-            Arc::new(PostService::new(post_repository.clone(), metrics.clone())) as DynPostsService;
-
         let comment_repository =
             Arc::new(CommentRepository::new(pool.clone())) as DynCommentRepository;
-        let comment_service =
-            Arc::new(CommentService::new(comment_repository, metrics.clone())) as DynCommentService;
+        let user_repository = Arc::new(UserRepository::new(pool)) as DynUserRepository;
 
-        let user_repository = Arc::new(UserRepository::new(pool.clone())) as DynUserRepository;
+        let category_service =
+            Arc::new(CategoryService::new(category_repository, metrics.clone()).await)
+                as DynCategoryService;
+
+        let post_service =
+            Arc::new(PostService::new(post_repository, metrics.clone()).await) as DynPostsService;
+
+        let comment_service =
+            Arc::new(CommentService::new(comment_repository, metrics.clone()).await)
+                as DynCommentService;
 
         let user_service =
-            Arc::new(UserService::new(user_repository.clone(), metrics.clone())) as DynUserService;
+            Arc::new(UserService::new(user_repository.clone(), metrics.clone()).await)
+                as DynUserService;
 
-        let auth_service = Arc::new(AuthService::new(
-            user_repository.clone(),
-            hashing,
-            jwt_config,
-            metrics,
-        ));
+        let auth_service =
+            Arc::new(AuthService::new(user_repository, hashing, jwt_config, metrics.clone()).await)
+                as DynAuthService;
 
         let file_service = Arc::new(FileService::default()) as DynFileService;
 

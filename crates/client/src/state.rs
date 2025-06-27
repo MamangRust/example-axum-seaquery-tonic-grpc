@@ -4,15 +4,14 @@ use genproto::{
     comment::comment_service_client::CommentServiceClient,
     post::posts_service_client::PostsServiceClient, user::user_service_client::UserServiceClient,
 };
-use prometheus_client::{metrics::family::Family, registry::Registry};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tonic::transport::Channel;
-
+use prometheus_client::registry::Registry;
 use shared::{
     config::JwtConfig,
     utils::{Metrics, SystemMetrics, run_metrics_collector},
 };
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tonic::transport::Channel;
 
 use crate::di::DependenciesInject;
 
@@ -29,16 +28,9 @@ impl AppState {
     pub async fn new(jwt_secret: &str) -> Self {
         let jwt_config = JwtConfig::new(jwt_secret);
 
-        let requests = Family::default();
         let mut registry = Registry::default();
 
-        registry.register(
-            "server_http_requests_client",
-            "Total number of HTTP requests",
-            requests.clone(),
-        );
-
-        let metrics = Arc::new(Mutex::new(Metrics { requests }));
+        let metrics = Arc::new(Mutex::new(Metrics::new()));
         let system_metrics = Arc::new(SystemMetrics::new());
 
         system_metrics.register(&mut registry);
@@ -65,7 +57,8 @@ impl AppState {
             post_client.clone(),
             comment_client.clone(),
             metrics.clone(),
-        );
+        )
+        .await;
 
         Self {
             registry,

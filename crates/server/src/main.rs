@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         .await
         .expect("Error initializing database connection pool");
 
-    let state = Arc::new(AppState::new(db_pool, &config.jwt_secret));
+    let state = Arc::new(AppState::new(db_pool, &config.jwt_secret).await);
 
     let service_auth = service::auth::AuthServiceImpl::new(state.clone());
     let service_user = service::user::UserServiceImpl::new(state.clone());

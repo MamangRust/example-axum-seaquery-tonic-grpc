@@ -1,15 +1,20 @@
 use std::sync::OnceLock;
 
-use opentelemetry::global;
+use opentelemetry::{Context, global};
 use opentelemetry_otlp::{LogExporter, MetricExporter, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::{
-    Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider,
-    propagation::TraceContextPropagator, trace::SdkTracerProvider,
+    Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider, trace::SdkTracerProvider,
 };
+use tokio::time::Instant;
 
 #[derive(Clone)]
 pub struct Telemetry {
     service_name: String,
+}
+
+pub struct TracingContext {
+    pub cx: Context,
+    pub start_time: Instant,
 }
 
 impl Telemetry {
@@ -31,8 +36,6 @@ impl Telemetry {
     }
 
     pub fn init_tracer(&self) -> SdkTracerProvider {
-        global::set_text_map_propagator(TraceContextPropagator::new());
-
         let exporter = SpanExporter::builder()
             .with_tonic()
             .with_endpoint("http://otel-collector:4317")

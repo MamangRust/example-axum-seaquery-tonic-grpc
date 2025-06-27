@@ -3,18 +3,19 @@ use crate::{
     domain::{
         ApiResponse, CommentResponse, CreateCommentRequest, ErrorResponse, UpdateCommentRequest,
     },
-    utils::{AppError, MetadataInjector, Method, Metrics},
+    utils::{MetadataInjector, Method, Metrics, Status as StatusUtils, TracingContext},
 };
 use async_trait::async_trait;
 use opentelemetry::{
     Context, KeyValue,
     global::{self, BoxedTracer},
-    trace::{SpanKind, TraceContextExt, Tracer},
+    trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
+use prometheus_client::registry::Registry;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tonic::{Request, Status};
-use tracing::info;
+use tokio::{sync::Mutex, time::Instant};
+use tonic::Request;
+use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct CommentService {
@@ -31,7 +32,20 @@ impl std::fmt::Debug for CommentService {
 }
 
 impl CommentService {
-    pub fn new(repository: DynCommentRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
+    pub async fn new(repository: DynCommentRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
+        let mut registry = Registry::default();
+
+        registry.register(
+            "category_service_request_counter",
+            "Total number of requests to the CategoryService",
+            metrics.lock().await.request_counter.clone(),
+        );
+        registry.register(
+            "category_service_request_duration",
+            "Histogram of request durations for the CategoryService",
+            metrics.lock().await.request_duration.clone(),
+        );
+
         Self {
             repository,
             metrics,
@@ -48,103 +62,162 @@ impl CommentService {
         });
     }
 
-    fn add_completion_event<T>(
-        &self,
-        cx: &Context,
-        result: &Result<T, Status>,
-        event_name: String,
-    ) {
-        let status = match result {
-            Ok(_) => "OK",
-            Err(status) => match status.code() {
-                tonic::Code::Ok => "OK",
-                tonic::Code::NotFound => "NOT_FOUND",
-                tonic::Code::InvalidArgument => "INVALID_ARGUMENT",
-                tonic::Code::Internal => "INTERNAL_ERROR",
-                _ => "UNKNOWN_ERROR",
-            },
-        };
+    fn start_tracing(&self, operation_name: &str, attributes: Vec<KeyValue>) -> TracingContext {
+        let start_time = Instant::now();
+        let tracer = self.get_tracer();
+        let mut span = tracer
+            .span_builder(operation_name.to_string())
+            .with_kind(SpanKind::Server)
+            .with_attributes(attributes)
+            .start(&tracer);
 
-        cx.span()
-            .add_event(event_name, vec![KeyValue::new("status", status)]);
+        info!("Starting operation: {}", operation_name);
+
+        span.add_event(
+            "Operation started",
+            vec![
+                KeyValue::new("operation", operation_name.to_string()),
+                KeyValue::new("timestamp", start_time.elapsed().as_secs_f64().to_string()),
+            ],
+        );
+
+        let cx = Context::current_with_span(span);
+        TracingContext { cx, start_time }
+    }
+
+    async fn complete_tracing_success(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, true, message)
+            .await;
+    }
+
+    async fn complete_tracing_error(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        error_message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, false, error_message)
+            .await;
+    }
+
+    async fn complete_tracing_internal(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        is_success: bool,
+        message: &str,
+    ) {
+        let status_str = if is_success { "SUCCESS" } else { "ERROR" };
+        let status = if is_success {
+            StatusUtils::Success
+        } else {
+            StatusUtils::Error
+        };
+        let elapsed = tracing_ctx.start_time.elapsed().as_secs_f64();
+
+        tracing_ctx.cx.span().add_event(
+            "Operation completed",
+            vec![
+                KeyValue::new("status", status_str),
+                KeyValue::new("duration_secs", elapsed.to_string()),
+                KeyValue::new("message", message.to_string()),
+            ],
+        );
+
+        if is_success {
+            info!("Operation completed successfully: {}", message);
+        } else {
+            error!("Operation failed: {}", message);
+        }
+
+        self.metrics.lock().await.record(method, status, elapsed);
+
+        tracing_ctx.cx.span().end();
     }
 }
 
 #[async_trait]
 impl CommentServiceTrait for CommentService {
     async fn get_comments(&self) -> Result<ApiResponse<Vec<CommentResponse>>, ErrorResponse> {
-        info!("Getting all comments");
+        let method = Method::Get;
 
-        self.metrics.lock().await.inc_requests(Method::Get);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("GetComments")
-            .with_kind(SpanKind::Server)
-            .with_attributes([KeyValue::new("component", "comment")])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+        let tracing_ctx =
+            self.start_tracing("GetComments", vec![KeyValue::new("component", "comment")]);
 
         let mut request = Request::new(());
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        let comments = self
-            .repository
-            .find_all()
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.find_all().await {
+            Ok(comments) => {
+                let response = comments.into_iter().map(CommentResponse::from).collect();
 
-        let response = comments.into_iter().map(CommentResponse::from).collect();
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    "Comments retrieved successfully",
+                )
+                .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Comments retrieved successfully".to_string());
+                Ok(ApiResponse {
+                    status: "success".to_string(),
+                    message: "Comments retrieved successfully".to_string(),
+                    data: response,
+                })
+            }
+            Err(err) => {
+                self.complete_tracing_error(&tracing_ctx, method, "Failed to retrieve comments")
+                    .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Comments retrieved successfully".to_string(),
-            data: response,
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn get_comment(
         &self,
         id: i32,
     ) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Get);
+        let method = Method::Get;
 
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("GetComment")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
-                KeyValue::new("component", "comment"),
+        let tracing_ctx = self.start_tracing(
+            "GetComment",
+            vec![
+                KeyValue::new("component", "category"),
                 KeyValue::new("id", id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(id);
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        let comment = self
-            .repository
-            .find_by_id(id)
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.find_by_id(id).await {
+            Ok(comment) => {
+                let response = comment.map(CommentResponse::from);
 
-        self.add_completion_event(&cx, &Ok(()), "Comment retrieved successfully".to_string());
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    method,
+                    "Comment retrieved successfully",
+                )
+                .await;
 
-        if let Some(comment) = comment {
-            Ok(Some(ApiResponse {
-                status: "success".to_string(),
-                message: "Comment retrieved successfully".to_string(),
-                data: CommentResponse::from(comment),
-            }))
-        } else {
-            Err(ErrorResponse::from(AppError::NotFound(format!(
-                "Comment with id {id} not found",
-            ))))
+                Ok(response.map(|comment| ApiResponse {
+                    status: "success".to_string(),
+                    message: "Comment retrieved successfully".to_string(),
+                    data: comment,
+                }))
+            }
+            Err(err) => {
+                self.complete_tracing_error(&tracing_ctx, method, "Failed to retrieve comment")
+                    .await;
+
+                Err(ErrorResponse::from(err))
+            }
         }
     }
 
@@ -152,105 +225,117 @@ impl CommentServiceTrait for CommentService {
         &self,
         input: &CreateCommentRequest,
     ) -> Result<ApiResponse<CommentResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Post);
+        let method = Method::Post;
 
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("CreateComment")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "CreateComment",
+            vec![
                 KeyValue::new("component", "comment"),
                 KeyValue::new("comment.name", input.user_name_comment.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(input.clone());
 
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        let comment = self
-            .repository
-            .create(input)
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.create(input).await {
+            Ok(comment) => {
+                self.complete_tracing_success(&tracing_ctx, method, "Comment created successfully")
+                    .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Comment created successfully".to_string());
+                Ok(ApiResponse {
+                    status: "success".to_string(),
+                    message: "Comment created successfully".to_string(),
+                    data: CommentResponse::from(comment),
+                })
+            }
+            Err(err) => {
+                self.complete_tracing_error(&tracing_ctx, method, "Failed to create comment")
+                    .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Comment created successfully".to_string(),
-            data: CommentResponse::from(comment),
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn update_comment(
         &self,
         input: &UpdateCommentRequest,
     ) -> Result<Option<ApiResponse<CommentResponse>>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Put);
+        let method = Method::Put;
 
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("UpdateComment")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "UpdateComment",
+            vec![
                 KeyValue::new("component", "comment"),
                 KeyValue::new("comment.name", input.user_name_comment.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(input.clone());
 
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        let comment = self
-            .repository
-            .update(input)
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.update(input).await {
+            Ok(comment) => {
+                self.complete_tracing_success(&tracing_ctx, method, "Comment updated successfully")
+                    .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Comment updated successfully".to_string());
+                Ok(Some(ApiResponse {
+                    status: "success".to_string(),
+                    message: "Comment updated successfully".to_string(),
+                    data: CommentResponse::from(comment),
+                }))
+            }
+            Err(err) => {
+                self.complete_tracing_error(&tracing_ctx, method, "Failed to update comment")
+                    .await;
 
-        Ok(Some(ApiResponse {
-            status: "success".to_string(),
-            message: "Comment updated successfully".to_string(),
-            data: CommentResponse::from(comment),
-        }))
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn delete_comment(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Delete);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("DeleteComment")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "DeleteComment",
+            vec![
                 KeyValue::new("component", "comment"),
                 KeyValue::new("id", id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(id);
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.repository
-            .delete(id)
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.delete(id).await {
+            Ok(_) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Comment deleted successfully".to_string(),
+                    data: (),
+                };
 
-        self.add_completion_event(&cx, &Ok(()), "Comment deleted successfully".to_string());
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    Method::Delete,
+                    "Comment deleted successfully",
+                )
+                .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Comment deleted successfully".to_string(),
-            data: (),
-        })
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    Method::Delete,
+                    &format!("Failed to delete comment: {}", err),
+                )
+                .await;
+
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 }

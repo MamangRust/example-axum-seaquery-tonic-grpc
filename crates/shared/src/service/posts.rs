@@ -4,17 +4,19 @@ use crate::{
         ApiResponse, ApiResponsePagination, CreatePostRequest, ErrorResponse, FindAllPostRequest,
         Pagination, PostRelationResponse, PostResponse, UpdatePostRequest,
     },
-    utils::{AppError, MetadataInjector, Method, Metrics},
+    utils::{AppError, MetadataInjector, Method, Metrics, Status as StatusUtils, TracingContext},
 };
 use async_trait::async_trait;
 use opentelemetry::{
     Context, KeyValue,
     global::{self, BoxedTracer},
-    trace::{SpanKind, TraceContextExt, Tracer},
+    trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
+use prometheus_client::registry::Registry;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tonic::{Request, Status};
+use tokio::{sync::Mutex, time::Instant};
+use tonic::Request;
+use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct PostService {
@@ -24,12 +26,26 @@ pub struct PostService {
 
 impl std::fmt::Debug for PostService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PostService").finish()
+        f.debug_struct("PostService")
+            .field("repository", &"DynPostsRepository")
+            .finish()
     }
 }
 
 impl PostService {
-    pub fn new(repository: DynPostsRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
+    pub async fn new(repository: DynPostsRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
+        let mut registry = Registry::default();
+        registry.register(
+            "post_service_request_counter",
+            "Total number of requests to the PostService",
+            metrics.lock().await.request_counter.clone(),
+        );
+        registry.register(
+            "post_service_request_duration",
+            "Histogram of request durations for the PostService",
+            metrics.lock().await.request_duration.clone(),
+        );
+
         Self {
             repository,
             metrics,
@@ -46,25 +62,82 @@ impl PostService {
         });
     }
 
-    fn add_completion_event<T>(
-        &self,
-        cx: &Context,
-        result: &Result<T, Status>,
-        event_name: String,
-    ) {
-        let status = match result {
-            Ok(_) => "OK",
-            Err(status) => match status.code() {
-                tonic::Code::Ok => "OK",
-                tonic::Code::NotFound => "NOT_FOUND",
-                tonic::Code::InvalidArgument => "INVALID_ARGUMENT",
-                tonic::Code::Internal => "INTERNAL_ERROR",
-                _ => "UNKNOWN_ERROR",
-            },
-        };
+    fn start_tracing(&self, operation_name: &str, attributes: Vec<KeyValue>) -> TracingContext {
+        let start_time = Instant::now();
+        let tracer = self.get_tracer();
+        let mut span = tracer
+            .span_builder(operation_name.to_string())
+            .with_kind(SpanKind::Server)
+            .with_attributes(attributes)
+            .start(&tracer);
 
-        cx.span()
-            .add_event(event_name, vec![KeyValue::new("status", status)]);
+        info!("Starting operation: {}", operation_name);
+
+        span.add_event(
+            "Operation started",
+            vec![
+                KeyValue::new("operation", operation_name.to_string()),
+                KeyValue::new("timestamp", start_time.elapsed().as_secs_f64().to_string()),
+            ],
+        );
+
+        let cx = Context::current_with_span(span);
+        TracingContext { cx, start_time }
+    }
+
+    async fn complete_tracing_success(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, true, message)
+            .await;
+    }
+
+    async fn complete_tracing_error(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        error_message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, false, error_message)
+            .await;
+    }
+
+    async fn complete_tracing_internal(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        is_success: bool,
+        message: &str,
+    ) {
+        let status_str = if is_success { "SUCCESS" } else { "ERROR" };
+        let status = if is_success {
+            StatusUtils::Success
+        } else {
+            StatusUtils::Error
+        };
+        let elapsed = tracing_ctx.start_time.elapsed().as_secs_f64();
+
+        tracing_ctx.cx.span().add_event(
+            "Operation completed",
+            vec![
+                KeyValue::new("status", status_str),
+                KeyValue::new("duration_secs", elapsed.to_string()),
+                KeyValue::new("message", message.to_string()),
+            ],
+        );
+
+        if is_success {
+            info!("Operation completed successfully: {}", message);
+        } else {
+            error!("Operation failed: {}", message);
+        }
+
+        self.metrics.lock().await.record(method, status, elapsed);
+
+        tracing_ctx.cx.span().end();
     }
 }
 
@@ -74,9 +147,7 @@ impl PostsServiceTrait for PostService {
         &self,
         req: FindAllPostRequest,
     ) -> Result<ApiResponsePagination<Vec<PostResponse>>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Get);
-
-        let tracer = self.get_tracer();
+        let method = Method::Get;
 
         let page = req.page.max(1);
         let page_size = req.page_size.max(1);
@@ -86,87 +157,109 @@ impl PostsServiceTrait for PostService {
             Some(req.search.clone())
         };
 
-        let span = tracer
-            .span_builder("GetAllPosts")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "GetAllPosts",
+            vec![
                 KeyValue::new("component", "post"),
                 KeyValue::new("page", page.to_string()),
                 KeyValue::new("page_size", page_size.to_string()),
-                KeyValue::new("search", search.clone().unwrap_or("".to_string())),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+                KeyValue::new("search", search.clone().unwrap_or_default()),
+            ],
+        );
 
         let mut request = Request::new(FindAllPostRequest {
             page,
             page_size,
-            search: search.clone().unwrap_or("".to_string()),
+            search: search.clone().unwrap_or_default(),
         });
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.get_all_posts(page, page_size, search).await {
+            Ok((posts, total_items)) => {
+                let responses = posts.into_iter().map(PostResponse::from).collect();
+                let total_pages = (total_items as f64 / page_size as f64).ceil() as i32;
 
-        let (posts, total_items) = self
-            .repository
-            .get_all_posts(page, page_size, search)
-            .await
-            .map_err(ErrorResponse::from)?;
+                let response = ApiResponsePagination {
+                    status: "success".to_string(),
+                    message: "Posts retrieved successfully".to_string(),
+                    data: responses,
+                    pagination: Pagination {
+                        page,
+                        page_size,
+                        total_items,
+                        total_pages,
+                    },
+                };
 
-        let responses: Vec<PostResponse> = posts.into_iter().map(PostResponse::from).collect();
+                self.complete_tracing_success(&tracing_ctx, method, "Posts retrieved successfully")
+                    .await;
 
-        let total_pages = (total_items as f64 / req.page_size as f64).ceil() as i32;
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Failed to retrieve posts: {}", err),
+                )
+                .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Posts retrieved successfully".to_string());
-
-        Ok(ApiResponsePagination {
-            status: "success".to_string(),
-            message: "Posts retrieved successfully".to_string(),
-            data: responses,
-            pagination: Pagination {
-                page: req.page,
-                page_size: req.page_size,
-                total_items,
-                total_pages,
-            },
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
-
     async fn get_post(
         &self,
         post_id: i32,
     ) -> Result<Option<ApiResponse<PostResponse>>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Get);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("GetPost")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "GetPost",
+            vec![
                 KeyValue::new("component", "post"),
                 KeyValue::new("id", post_id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
-        let post = self
-            .repository
-            .get_post(post_id)
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.get_post(post_id).await {
+            Ok(Some(post)) => {
+                let response = Some(ApiResponse {
+                    status: "success".to_string(),
+                    message: "Post retrieved successfully".to_string(),
+                    data: PostResponse::from(post),
+                });
 
-        self.add_completion_event(&cx, &Ok(()), "Post retrieved successfully".to_string());
+                self.complete_tracing_success(
+                    &tracing_ctx,
+                    Method::Get,
+                    "Post retrieved successfully",
+                )
+                .await;
 
-        if let Some(post) = post {
-            Ok(Some(ApiResponse {
-                status: "success".to_string(),
-                message: "Post retrieved successfully".to_string(),
-                data: PostResponse::from(post),
-            }))
-        } else {
-            Err(ErrorResponse::from(AppError::NotFound(format!(
-                "Posts with id {post_id} not found",
-            ))))
+                Ok(response)
+            }
+            Ok(None) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    Method::Get,
+                    &format!("Post with id {} not found", post_id),
+                )
+                .await;
+
+                Err(ErrorResponse::from(AppError::NotFound(format!(
+                    "Post with id {} not found",
+                    post_id
+                ))))
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    Method::Get,
+                    &format!("Error retrieving post: {}", err),
+                )
+                .await;
+
+                Err(ErrorResponse::from(err))
+            }
         }
     }
 
@@ -174,150 +267,178 @@ impl PostsServiceTrait for PostService {
         &self,
         post_id: i32,
     ) -> Result<ApiResponse<PostRelationResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Get);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("GetPostRelation")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let method = Method::Get;
+        let tracing_ctx = self.start_tracing(
+            "GetPostRelation",
+            vec![
                 KeyValue::new("component", "post"),
                 KeyValue::new("id", post_id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
-
-        let mut request = Request::new(post_id);
-        self.inject_trace_context(&cx, &mut request);
-
-        let relations = self
-            .repository
-            .get_post_relation(post_id)
-            .await
-            .map_err(ErrorResponse::from)?;
-
-        let first_relation = relations
-            .into_iter()
-            .next()
-            .ok_or_else(|| AppError::NotFound("Post relation not found".to_string()))?;
-
-        self.add_completion_event(
-            &cx,
-            &Ok(()),
-            "Post relation retrieved successfully".to_string(),
+            ],
         );
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Post relation retrieved successfully".to_string(),
-            data: first_relation,
-        })
+        let mut request = Request::new(post_id);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
+
+        match self.repository.get_post_relation(post_id).await {
+            Ok(relations) => match relations.into_iter().next() {
+                Some(first_relation) => {
+                    let response = ApiResponse {
+                        status: "success".to_string(),
+                        message: "Post relation retrieved successfully".to_string(),
+                        data: first_relation,
+                    };
+
+                    self.complete_tracing_success(
+                        &tracing_ctx,
+                        method,
+                        "Post relation retrieved successfully",
+                    )
+                    .await;
+
+                    Ok(response)
+                }
+                None => {
+                    self.complete_tracing_error(&tracing_ctx, method, "Post relation not found")
+                        .await;
+
+                    Err(ErrorResponse::from(AppError::NotFound(
+                        "Post relation not found".to_string(),
+                    )))
+                }
+            },
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Error retrieving post relation: {}", err),
+                )
+                .await;
+
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn create_post(
         &self,
         input: &CreatePostRequest,
     ) -> Result<ApiResponse<PostResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Post);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("CreatePost")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let method = Method::Post;
+        let tracing_ctx = self.start_tracing(
+            "CreatePost",
+            vec![
                 KeyValue::new("component", "post"),
                 KeyValue::new("title", input.title.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(input.clone());
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.create_post(input).await {
+            Ok(post) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Post created successfully".to_string(),
+                    data: PostResponse::from(post),
+                };
 
-        let post = self
-            .repository
-            .create_post(input)
-            .await
-            .map_err(ErrorResponse::from)?;
+                self.complete_tracing_success(&tracing_ctx, method, "Post created successfully")
+                    .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Post created successfully".to_string());
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Failed to create post: {}", err),
+                )
+                .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Post created successfully".to_string(),
-            data: PostResponse::from(post),
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn update_post(
         &self,
         input: &UpdatePostRequest,
     ) -> Result<ApiResponse<PostResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Put);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("UpdatePost")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let method = Method::Put;
+        let tracing_ctx = self.start_tracing(
+            "UpdatePost",
+            vec![
                 KeyValue::new("component", "post"),
                 KeyValue::new("title", input.title.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(input.clone());
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
+        match self.repository.update_post(input).await {
+            Ok(post) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Post updated successfully".to_string(),
+                    data: PostResponse::from(post),
+                };
 
-        let post = self
-            .repository
-            .update_post(input)
-            .await
-            .map_err(ErrorResponse::from)?;
+                self.complete_tracing_success(&tracing_ctx, method, "Post updated successfully")
+                    .await;
 
-        self.add_completion_event(&cx, &Ok(()), "Post updated successfully".to_string());
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Failed to update post: {}", err),
+                )
+                .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Post updated successfully".to_string(),
-            data: PostResponse::from(post),
-        })
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn delete_post(&self, post_id: i32) -> Result<ApiResponse<()>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Delete);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("DeletePost")
-            .with_kind(SpanKind::Server)
-            .with_attributes([
+        let method = Method::Delete;
+        let tracing_ctx = self.start_tracing(
+            "DeletePost",
+            vec![
                 KeyValue::new("component", "post"),
                 KeyValue::new("id", post_id.to_string()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(post_id);
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.repository
-            .delete_post(post_id)
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.delete_post(post_id).await {
+            Ok(_) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Post deleted successfully".to_string(),
+                    data: (),
+                };
 
-        self.add_completion_event(&cx, &Ok(()), "Post deleted successfully".to_string());
+                self.complete_tracing_success(&tracing_ctx, method, "Post deleted successfully")
+                    .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "Post deleted successfully".to_string(),
-            data: (),
-        })
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Failed to delete post: {}", err),
+                )
+                .await;
+
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 }

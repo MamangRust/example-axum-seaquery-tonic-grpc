@@ -1,5 +1,14 @@
+use async_trait::async_trait;
+use opentelemetry::{
+    Context, KeyValue,
+    global::{self, BoxedTracer},
+    trace::{Span, SpanKind, TraceContextExt, Tracer},
+};
+use prometheus_client::registry::Registry;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
+use tonic::Request;
+use tracing::{error, info};
 
 use crate::{
     abstract_trait::{AuthServiceTrait, DynUserRepository},
@@ -7,15 +16,8 @@ use crate::{
     domain::{
         ApiResponse, CreateUserRequest, ErrorResponse, LoginRequest, RegisterRequest, UserResponse,
     },
-    utils::{AppError, MetadataInjector, Method, Metrics},
+    utils::{AppError, MetadataInjector, Method, Metrics, Status as StatusUtils, TracingContext},
 };
-use async_trait::async_trait;
-use opentelemetry::{
-    Context, KeyValue,
-    global::{self, BoxedTracer},
-    trace::{SpanKind, TraceContextExt, Tracer},
-};
-use tonic::{Request, Status};
 
 #[derive(Clone)]
 pub struct AuthService {
@@ -36,12 +38,25 @@ impl std::fmt::Debug for AuthService {
 }
 
 impl AuthService {
-    pub fn new(
+    pub async fn new(
         repository: DynUserRepository,
         hashing: Hashing,
         jwt_config: JwtConfig,
         metrics: Arc<Mutex<Metrics>>,
     ) -> Self {
+        let mut registry = Registry::default();
+
+        registry.register(
+            "auth_service_request_counter",
+            "Total number of requests to the AuthService",
+            metrics.lock().await.request_counter.clone(),
+        );
+        registry.register(
+            "auth_service_request_duration",
+            "Histogram of request durations for the AuthService",
+            metrics.lock().await.request_duration.clone(),
+        );
+
         Self {
             repository,
             hashing,
@@ -60,19 +75,82 @@ impl AuthService {
         });
     }
 
-    fn add_completion_event<T>(
-        &self,
-        cx: &Context,
-        result: &Result<T, Status>,
-        event_name: String,
-    ) {
-        let status = match result {
-            Ok(_) => "OK".to_string(),
-            Err(status) => status.code().to_string(),
-        };
+    fn start_tracing(&self, operation_name: &str, attributes: Vec<KeyValue>) -> TracingContext {
+        let start_time = Instant::now();
+        let tracer = self.get_tracer();
+        let mut span = tracer
+            .span_builder(operation_name.to_string())
+            .with_kind(SpanKind::Server)
+            .with_attributes(attributes)
+            .start(&tracer);
 
-        cx.span()
-            .add_event(event_name, vec![KeyValue::new("status", status)]);
+        info!("Starting operation: {}", operation_name);
+
+        span.add_event(
+            "Operation started",
+            vec![
+                KeyValue::new("operation", operation_name.to_string()),
+                KeyValue::new("timestamp", start_time.elapsed().as_secs_f64().to_string()),
+            ],
+        );
+
+        let cx = Context::current_with_span(span);
+        TracingContext { cx, start_time }
+    }
+
+    async fn complete_tracing_success(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, true, message)
+            .await;
+    }
+
+    async fn complete_tracing_error(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        error_message: &str,
+    ) {
+        self.complete_tracing_internal(tracing_ctx, method, false, error_message)
+            .await;
+    }
+
+    async fn complete_tracing_internal(
+        &self,
+        tracing_ctx: &TracingContext,
+        method: Method,
+        is_success: bool,
+        message: &str,
+    ) {
+        let status_str = if is_success { "SUCCESS" } else { "ERROR" };
+        let status = if is_success {
+            StatusUtils::Success
+        } else {
+            StatusUtils::Error
+        };
+        let elapsed = tracing_ctx.start_time.elapsed().as_secs_f64();
+
+        tracing_ctx.cx.span().add_event(
+            "Operation completed",
+            vec![
+                KeyValue::new("status", status_str),
+                KeyValue::new("duration_secs", elapsed.to_string()),
+                KeyValue::new("message", message.to_string()),
+            ],
+        );
+
+        if is_success {
+            info!("Operation completed successfully: {}", message);
+        } else {
+            error!("Operation failed: {}", message);
+        }
+
+        self.metrics.lock().await.record(method, status, elapsed);
+
+        tracing_ctx.cx.span().end();
     }
 }
 
@@ -82,107 +160,150 @@ impl AuthServiceTrait for AuthService {
         &self,
         input: &RegisterRequest,
     ) -> Result<ApiResponse<UserResponse>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Post);
-
-        let tracer = self.get_tracer();
-
-        let span = tracer
-            .span_builder("RegisterUser")
-            .with_kind(SpanKind::Client)
-            .with_attributes([
+        let method = Method::Post;
+        let tracing_ctx = self.start_tracing(
+            "RegisterUser",
+            vec![
                 KeyValue::new("component", "auth"),
                 KeyValue::new("user.email", input.email.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(input.clone());
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        self.inject_trace_context(&cx, &mut request);
-
-        let exists = self
-            .repository
-            .find_by_email_exists(&input.email)
-            .await
-            .map_err(ErrorResponse::from)?;
-
-        if exists {
-            return Err(ErrorResponse::from(AppError::EmailAlreadyExists));
+        match self.repository.find_by_email_exists(&input.email).await {
+            Ok(true) => {
+                self.complete_tracing_error(&tracing_ctx, method, "Email already exists")
+                    .await;
+                return Err(ErrorResponse::from(AppError::EmailAlreadyExists));
+            }
+            Ok(false) => (),
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Error checking email: {}", err),
+                )
+                .await;
+                return Err(ErrorResponse::from(err));
+            }
         }
 
-        let hashed_password = self
-            .hashing
-            .hash_password(&input.password)
-            .await
-            .map_err(|e| ErrorResponse::from(AppError::HashingError(e)))?;
+        let hashed_password = match self.hashing.hash_password(&input.password).await {
+            Ok(hashed) => hashed,
+            Err(e) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Password hashing failed: {}", e),
+                )
+                .await;
+                return Err(ErrorResponse::from(AppError::HashingError(e)));
+            }
+        };
 
-        let request = CreateUserRequest {
+        let create_user_request = CreateUserRequest {
             firstname: input.firstname.clone(),
             lastname: input.lastname.clone(),
             email: input.email.clone(),
             password: hashed_password,
         };
 
-        let create_user = self
-            .repository
-            .create_user(&request)
-            .await
-            .map_err(ErrorResponse::from)?;
+        match self.repository.create_user(&create_user_request).await {
+            Ok(user) => {
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "User registered successfully".to_string(),
+                    data: UserResponse::from(user),
+                };
 
-        self.add_completion_event(&cx, &Ok(create_user.clone()), "UserCreated".to_string());
+                self.complete_tracing_success(&tracing_ctx, method, "User registered successfully")
+                    .await;
 
-        Ok(ApiResponse {
-            status: "success".to_string(),
-            message: "User registered successfully".to_string(),
-            data: UserResponse::from(create_user),
-        })
+                Ok(response)
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("User registration failed: {}", err),
+                )
+                .await;
+
+                Err(ErrorResponse::from(err))
+            }
+        }
     }
 
     async fn login_user(&self, input: &LoginRequest) -> Result<ApiResponse<String>, ErrorResponse> {
-        self.metrics.lock().await.inc_requests(Method::Post);
+        let method = Method::Post;
 
-        let tracer = self.get_tracer();
-        let span = tracer
-            .span_builder("LoginUser")
-            .with_kind(SpanKind::Client)
-            .with_attributes([
+        let tracing_ctx = self.start_tracing(
+            "LoginUser",
+            vec![
                 KeyValue::new("component", "auth"),
                 KeyValue::new("user.email", input.email.clone()),
-            ])
-            .start(&tracer);
-        let cx = Context::current_with_span(span);
+            ],
+        );
 
         let mut request = Request::new(input.clone());
-        self.inject_trace_context(&cx, &mut request);
+        self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
-        let user = self
-            .repository
-            .find_by_email(&input.email)
-            .await
-            .map_err(ErrorResponse::from)?
-            .ok_or_else(|| ErrorResponse::from(AppError::NotFound("User not found".to_string())))?;
+        let user = match self.repository.find_by_email(&input.email).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                self.complete_tracing_error(&tracing_ctx, method, "User not found")
+                    .await;
+                return Err(ErrorResponse::from(AppError::NotFound(
+                    "User not found".to_string(),
+                )));
+            }
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Error finding user: {}", err),
+                )
+                .await;
+                return Err(ErrorResponse::from(err));
+            }
+        };
 
-        if self
+        if (self
             .hashing
             .compare_password(&user.password, &input.password)
-            .await
+            .await)
             .is_err()
         {
+            self.complete_tracing_error(&tracing_ctx, method, "Invalid credentials")
+                .await;
             return Err(ErrorResponse::from(AppError::InvalidCredentials));
         }
 
-        let token = self
-            .jwt_config
-            .generate_token(user.id as i64)
-            .map_err(ErrorResponse::from)?;
+        let token = match self.jwt_config.generate_token(user.id as i64) {
+            Ok(token) => token,
+            Err(err) => {
+                self.complete_tracing_error(
+                    &tracing_ctx,
+                    method,
+                    &format!("Token generation failed: {}", err),
+                )
+                .await;
+                return Err(ErrorResponse::from(err));
+            }
+        };
 
-        self.add_completion_event(&cx, &Ok(token.clone()), "LoginSuccessful".to_string());
-
-        Ok(ApiResponse {
+        let response = ApiResponse {
             status: "success".to_string(),
             message: "Login successful".to_string(),
             data: token,
-        })
+        };
+
+        self.complete_tracing_success(&tracing_ctx, method, "Login successful")
+            .await;
+
+        Ok(response)
     }
 
     fn verify_token(&self, token: &str) -> Result<i64, AppError> {

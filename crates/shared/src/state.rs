@@ -1,4 +1,4 @@
-use prometheus_client::{metrics::family::Family, registry::Registry};
+use prometheus_client::registry::Registry;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -17,20 +17,13 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(pool: ConnectionPool, jwt_secret: &str) -> Self {
+    pub async fn new(pool: ConnectionPool, jwt_secret: &str) -> Self {
         let jwt_config = JwtConfig::new(jwt_secret);
         let hashing = Hashing;
 
-        let requests = Family::default();
         let mut registry = Registry::default();
 
-        registry.register(
-            "server_http_requests_server",
-            "Total number of HTTP requests",
-            requests.clone(),
-        );
-
-        let metrics = Arc::new(Mutex::new(Metrics { requests }));
+        let metrics = Arc::new(Mutex::new(Metrics::new()));
 
         let system_metrics = Arc::new(SystemMetrics::new());
 
@@ -41,7 +34,7 @@ impl AppState {
         tokio::spawn(run_metrics_collector(system_metrics.clone()));
 
         let di_container =
-            DependenciesInject::new(pool, hashing, jwt_config.clone(), metrics.clone());
+            DependenciesInject::new(pool, hashing, jwt_config.clone(), metrics.clone()).await;
 
         Self {
             registry,
