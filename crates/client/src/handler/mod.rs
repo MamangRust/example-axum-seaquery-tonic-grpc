@@ -84,7 +84,15 @@ impl Modify for SecurityAddon {
 
 pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let mut buffer = String::new();
-    encode(&mut buffer, &state.registry).unwrap();
+
+    let registry = state.registry.lock().await;
+
+    if let Err(e) = encode(&mut buffer, &registry) {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(format!("Failed to encode metrics: {e}")))
+            .unwrap();
+    }
 
     Response::builder()
         .status(StatusCode::OK)

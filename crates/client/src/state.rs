@@ -1,9 +1,3 @@
-use genproto::{
-    auth::auth_service_client::AuthServiceClient,
-    category::category_service_client::CategoryServiceClient,
-    comment::comment_service_client::CommentServiceClient,
-    post::posts_service_client::PostsServiceClient, user::user_service_client::UserServiceClient,
-};
 use prometheus_client::registry::Registry;
 use shared::{
     config::JwtConfig,
@@ -13,11 +7,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::transport::Channel;
 
-use crate::di::DependenciesInject;
+use crate::{di::DependenciesInject, service::GrpcClients};
 
 #[derive(Debug)]
 pub struct AppState {
-    pub registry: Arc<Registry>,
+    pub registry: Arc<Mutex<Registry>>,
     pub jwt_config: JwtConfig,
     pub metrics: Arc<Mutex<Metrics>>,
     pub di_container: DependenciesInject,
@@ -25,47 +19,44 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new(jwt_secret: &str) -> Self {
+    pub async fn new(jwt_secret: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let jwt_config = JwtConfig::new(jwt_secret);
-
-        let mut registry = Registry::default();
-
+        let registry = Arc::new(Mutex::new(Registry::default()));
         let metrics = Arc::new(Mutex::new(Metrics::new()));
         let system_metrics = Arc::new(SystemMetrics::new());
 
-        system_metrics.register(&mut registry);
-
-        let registry = Arc::new(registry);
+        registry.lock().await.register_metrics(&system_metrics);
 
         tokio::spawn(run_metrics_collector(system_metrics.clone()));
 
         let channel = Channel::from_static("http://blog-server:50051")
             .connect()
             .await
-            .expect("Failed to connect to gRPC server");
+            .map_err(|e| format!("gRPC connection failed: {}", e))?;
 
-        let auth_client = Arc::new(Mutex::new(AuthServiceClient::new(channel.clone())));
-        let user_client = Arc::new(Mutex::new(UserServiceClient::new(channel.clone())));
-        let category_client = Arc::new(Mutex::new(CategoryServiceClient::new(channel.clone())));
-        let post_client = Arc::new(Mutex::new(PostsServiceClient::new(channel.clone())));
-        let comment_client = Arc::new(Mutex::new(CommentServiceClient::new(channel.clone())));
+        let clients = GrpcClients::init(channel).await;
 
-        let di_container = DependenciesInject::new(
-            auth_client.clone(),
-            user_client.clone(),
-            category_client.clone(),
-            post_client.clone(),
-            comment_client.clone(),
-            metrics.clone(),
-        )
-        .await;
+        let di_container = {
+            let mut registry = registry.lock().await;
+            DependenciesInject::new(clients, metrics.clone(), &mut registry).await
+        };
 
-        Self {
+        Ok(Self {
             registry,
-            di_container,
             jwt_config,
             metrics,
+            di_container,
             system_metrics,
-        }
+        })
+    }
+}
+
+trait MetricsRegister {
+    fn register_metrics(&mut self, metrics: &SystemMetrics);
+}
+
+impl MetricsRegister for Registry {
+    fn register_metrics(&mut self, metrics: &SystemMetrics) {
+        metrics.register(self);
     }
 }

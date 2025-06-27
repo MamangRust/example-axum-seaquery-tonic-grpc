@@ -33,9 +33,8 @@ impl CommentService {
     pub async fn new(
         client: Arc<Mutex<CommentServiceClient<Channel>>>,
         metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
     ) -> Self {
-        let mut registry = Registry::default();
-
         registry.register(
             "comment_handler_request_counter",
             "Total number of requests to the CommentService",

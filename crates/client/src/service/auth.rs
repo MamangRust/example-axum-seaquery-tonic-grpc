@@ -32,9 +32,8 @@ impl AuthService {
     pub async fn new(
         client: Arc<Mutex<AuthServiceClient<Channel>>>,
         metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
     ) -> Self {
-        let mut registry = Registry::default();
-
         registry.register(
             "auth_handler_request_counter",
             "Total number of requests to the AuthService",

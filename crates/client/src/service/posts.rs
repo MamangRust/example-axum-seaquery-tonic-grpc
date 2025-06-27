@@ -34,9 +34,8 @@ impl PostsService {
     pub async fn new(
         client: Arc<Mutex<PostsServiceClient<Channel>>>,
         metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
     ) -> Self {
-        let mut registry = Registry::default();
-
         registry.register(
             "post_handler_request_counter",
             "Total number of requests to the PostService",

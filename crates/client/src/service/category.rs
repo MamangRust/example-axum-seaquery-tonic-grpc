@@ -35,9 +35,8 @@ impl CategoryService {
     pub async fn new(
         client: Arc<Mutex<CategoryServiceClient<Channel>>>,
         metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
     ) -> Self {
-        let mut registry = Registry::default();
-
         registry.register(
             "category_handler_request_counter",
             "Total number of requests to the AuthService",

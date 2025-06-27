@@ -32,9 +32,11 @@ impl std::fmt::Debug for CommentService {
 }
 
 impl CommentService {
-    pub async fn new(repository: DynCommentRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
-        let mut registry = Registry::default();
-
+    pub async fn new(
+        repository: DynCommentRepository,
+        metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
+    ) -> Self {
         registry.register(
             "category_service_request_counter",
             "Total number of requests to the CategoryService",

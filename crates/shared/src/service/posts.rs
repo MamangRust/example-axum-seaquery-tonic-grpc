@@ -33,8 +33,11 @@ impl std::fmt::Debug for PostService {
 }
 
 impl PostService {
-    pub async fn new(repository: DynPostsRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
-        let mut registry = Registry::default();
+    pub async fn new(
+        repository: DynPostsRepository,
+        metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
+    ) -> Self {
         registry.register(
             "post_service_request_counter",
             "Total number of requests to the PostService",

@@ -43,9 +43,8 @@ impl AuthService {
         hashing: Hashing,
         jwt_config: JwtConfig,
         metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
     ) -> Self {
-        let mut registry = Registry::default();
-
         registry.register(
             "auth_service_request_counter",
             "Total number of requests to the AuthService",

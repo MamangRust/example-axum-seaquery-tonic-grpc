@@ -25,9 +25,11 @@ pub struct UserService {
 }
 
 impl UserService {
-    pub async fn new(repository: DynUserRepository, metrics: Arc<Mutex<Metrics>>) -> Self {
-        let mut registry = Registry::default();
-
+    pub async fn new(
+        repository: DynUserRepository,
+        metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
+    ) -> Self {
         registry.register(
             "user_service_request_counter",
             "Total number of requests to the UserService",

@@ -1,3 +1,4 @@
+use prometheus_client::registry::Registry;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -44,6 +45,7 @@ impl DependenciesInject {
         hashing: Hashing,
         jwt_config: JwtConfig,
         metrics: Arc<Mutex<Metrics>>,
+        registry: &mut Registry,
     ) -> Self {
         let category_repository =
             Arc::new(CategoryRepository::new(pool.clone())) as DynCategoryRepository;
@@ -53,23 +55,31 @@ impl DependenciesInject {
         let user_repository = Arc::new(UserRepository::new(pool)) as DynUserRepository;
 
         let category_service =
-            Arc::new(CategoryService::new(category_repository, metrics.clone()).await)
+            Arc::new(CategoryService::new(category_repository, metrics.clone(), registry).await)
                 as DynCategoryService;
 
         let post_service =
-            Arc::new(PostService::new(post_repository, metrics.clone()).await) as DynPostsService;
+            Arc::new(PostService::new(post_repository, metrics.clone(), registry).await)
+                as DynPostsService;
 
         let comment_service =
-            Arc::new(CommentService::new(comment_repository, metrics.clone()).await)
+            Arc::new(CommentService::new(comment_repository, metrics.clone(), registry).await)
                 as DynCommentService;
 
         let user_service =
-            Arc::new(UserService::new(user_repository.clone(), metrics.clone()).await)
+            Arc::new(UserService::new(user_repository.clone(), metrics.clone(), registry).await)
                 as DynUserService;
 
-        let auth_service =
-            Arc::new(AuthService::new(user_repository, hashing, jwt_config, metrics.clone()).await)
-                as DynAuthService;
+        let auth_service = Arc::new(
+            AuthService::new(
+                user_repository,
+                hashing,
+                jwt_config,
+                metrics.clone(),
+                registry,
+            )
+            .await,
+        ) as DynAuthService;
 
         let file_service = Arc::new(FileService::default()) as DynFileService;
 

@@ -26,9 +26,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("🚀 Server started successfully");
 
-    AppRouter::serve(port, state).await?;
+    AppRouter::serve(port, state.expect("Failed to create state")).await?;
 
     let mut shutdown_errors = Vec::new();
+
     if let Err(e) = tracer_provider.shutdown() {
         shutdown_errors.push(format!("tracer provider: {e}"));
     }
