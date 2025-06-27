@@ -253,7 +253,7 @@ impl PostsServiceTrait for PostService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     Method::Get,
-                    &format!("Error retrieving post: {}", err),
+                    &format!("Error retrieving post: {err}"),
                 )
                 .await;
 

@@ -330,7 +330,7 @@ impl CommentServiceTrait for CommentService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     Method::Delete,
-                    &format!("Failed to delete comment: {}", err),
+                    &format!("Failed to delete comment: {err}"),
                 )
                 .await;
 
