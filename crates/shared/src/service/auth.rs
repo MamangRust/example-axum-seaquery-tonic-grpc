@@ -183,7 +183,7 @@ impl AuthServiceTrait for AuthService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Error checking email: {}", err),
+                    &format!("Error checking email: {err}"),
                 )
                 .await;
                 return Err(ErrorResponse::from(err));
@@ -196,7 +196,7 @@ impl AuthServiceTrait for AuthService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Password hashing failed: {}", e),
+                    &format!("Password hashing failed: {e}"),
                 )
                 .await;
                 return Err(ErrorResponse::from(AppError::HashingError(e)));
@@ -227,7 +227,7 @@ impl AuthServiceTrait for AuthService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("User registration failed: {}", err),
+                    &format!("User registration failed: {err}"),
                 )
                 .await;
 
@@ -263,7 +263,7 @@ impl AuthServiceTrait for AuthService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Error finding user: {}", err),
+                    &format!("Error finding user: {err}"),
                 )
                 .await;
                 return Err(ErrorResponse::from(err));
@@ -287,7 +287,7 @@ impl AuthServiceTrait for AuthService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Token generation failed: {}", err),
+                    &format!("Token generation failed: {err}"),
                 )
                 .await;
                 return Err(ErrorResponse::from(err));

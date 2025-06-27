@@ -69,7 +69,7 @@ impl CommentService {
             .with_attributes(attributes)
             .start(&tracer);
 
-        info!("Starting operation: {}", operation_name);
+        info!("Starting operation: {operation_name}");
 
         span.add_event(
             "Operation started",
@@ -128,9 +128,9 @@ impl CommentService {
         );
 
         if is_success {
-            info!("Operation completed successfully: {}", message);
+            info!("Operation completed successfully: {message}");
         } else {
-            error!("Operation failed: {}", message);
+            error!("Operation failed: {message}");
         }
 
         self.metrics.lock().await.record(method, status, elapsed);
@@ -216,7 +216,7 @@ impl CommentServiceTrait for CommentService {
                 self.complete_tracing_success(
                     &tracing_ctx,
                     method,
-                    &format!("Comment with id {} retrieved successfully", id),
+                    &format!("Comment with id {id} retrieved successfully"),
                 )
                 .await;
 
@@ -399,7 +399,7 @@ impl CommentServiceTrait for CommentService {
                 self.complete_tracing_success(
                     &tracing_ctx,
                     method,
-                    &format!("Comment {} deleted successfully", id),
+                    &format!("Comment {id} deleted successfully"),
                 )
                 .await;
 

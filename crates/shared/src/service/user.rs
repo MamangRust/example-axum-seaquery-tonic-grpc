@@ -64,7 +64,7 @@ impl UserService {
             .with_attributes(attributes)
             .start(&tracer);
 
-        info!("Starting operation: {}", operation_name);
+        info!("Starting operation: {operation_name}");
 
         span.add_event(
             "Operation started",
@@ -123,9 +123,9 @@ impl UserService {
         );
 
         if is_success {
-            info!("Operation completed successfully: {}", message);
+            info!("Operation completed successfully: {message}");
         } else {
-            error!("Operation failed: {}", message);
+            error!("Operation failed: {message}");
         }
 
         self.metrics.lock().await.record(method, status, elapsed);
@@ -193,7 +193,7 @@ impl UserServiceTrait for UserService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to retrieve users: {}", err),
+                    &format!("Failed to retrieve users: {err}"),
                 )
                 .await;
 
@@ -228,7 +228,7 @@ impl UserServiceTrait for UserService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Error checking email: {}", err),
+                    &format!("Error checking email: {err}"),
                 )
                 .await;
                 return Err(ErrorResponse::from(err));
@@ -252,7 +252,7 @@ impl UserServiceTrait for UserService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to create user: {}", err),
+                    &format!("Failed to create user: {err}"),
                 )
                 .await;
 
@@ -294,20 +294,19 @@ impl UserServiceTrait for UserService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("User with id {} not found", id),
+                    &format!("User with id {id} not found"),
                 )
                 .await;
 
                 Err(ErrorResponse::from(AppError::NotFound(format!(
-                    "User with id {} not found",
-                    id
+                    "User with id {id} not found"
                 ))))
             }
             Err(err) => {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Error retrieving user: {}", err),
+                    &format!("Error retrieving user: {err}"),
                 )
                 .await;
 
@@ -349,7 +348,7 @@ impl UserServiceTrait for UserService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to update user: {}", err),
+                    &format!("Failed to update user: {err}"),
                 )
                 .await;
 
@@ -388,7 +387,7 @@ impl UserServiceTrait for UserService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to delete user: {}", err),
+                    &format!("Failed to delete user: {err}"),
                 )
                 .await;
 

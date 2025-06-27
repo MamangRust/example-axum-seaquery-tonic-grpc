@@ -70,7 +70,7 @@ impl CategoryService {
             .with_attributes(attributes)
             .start(&tracer);
 
-        info!("Starting operation: {}", operation_name);
+        info!("Starting operation: {operation_name}");
 
         span.add_event(
             "Operation started",
@@ -129,9 +129,9 @@ impl CategoryService {
         );
 
         if is_success {
-            info!("Operation completed successfully: {}", message);
+            info!("Operation completed successfully: {message}");
         } else {
-            error!("Operation failed: {}", message);
+            error!("Operation failed: {message}");
         }
 
         self.metrics.lock().await.record(method, status, elapsed);
@@ -234,7 +234,7 @@ impl CategoryServiceTrait for CategoryService {
                 self.complete_tracing_success(
                     &tracing_ctx,
                     method,
-                    &format!("Category {} found successfully", id),
+                    &format!("Category {id} found successfully"),
                 )
                 .await;
 
@@ -413,7 +413,7 @@ impl CategoryServiceTrait for CategoryService {
                 self.complete_tracing_success(
                     &tracing_ctx,
                     method,
-                    &format!("Category {} deleted successfully", id),
+                    &format!("Category {id} deleted successfully"),
                 )
                 .await;
 

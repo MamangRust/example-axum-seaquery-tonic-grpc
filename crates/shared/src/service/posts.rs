@@ -71,7 +71,7 @@ impl PostService {
             .with_attributes(attributes)
             .start(&tracer);
 
-        info!("Starting operation: {}", operation_name);
+        info!("Starting operation: {operation_name}");
 
         span.add_event(
             "Operation started",
@@ -130,9 +130,9 @@ impl PostService {
         );
 
         if is_success {
-            info!("Operation completed successfully: {}", message);
+            info!("Operation completed successfully: {message}");
         } else {
-            error!("Operation failed: {}", message);
+            error!("Operation failed: {message}");
         }
 
         self.metrics.lock().await.record(method, status, elapsed);
@@ -200,7 +200,7 @@ impl PostsServiceTrait for PostService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to retrieve posts: {}", err),
+                    &format!("Failed to retrieve posts: {err}"),
                 )
                 .await;
 
@@ -241,13 +241,12 @@ impl PostsServiceTrait for PostService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     Method::Get,
-                    &format!("Post with id {} not found", post_id),
+                    &format!("Post with id {post_id} not found"),
                 )
                 .await;
 
                 Err(ErrorResponse::from(AppError::NotFound(format!(
-                    "Post with id {} not found",
-                    post_id
+                    "Post with id {post_id} not found",
                 ))))
             }
             Err(err) => {
@@ -310,7 +309,7 @@ impl PostsServiceTrait for PostService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Error retrieving post relation: {}", err),
+                    &format!("Error retrieving post relation: {err}"),
                 )
                 .await;
 
@@ -352,7 +351,7 @@ impl PostsServiceTrait for PostService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to create post: {}", err),
+                    &format!("Failed to create post: {err}"),
                 )
                 .await;
 
@@ -394,7 +393,7 @@ impl PostsServiceTrait for PostService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to update post: {}", err),
+                    &format!("Failed to update post: {err}"),
                 )
                 .await;
 
@@ -433,7 +432,7 @@ impl PostsServiceTrait for PostService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to delete post: {}", err),
+                    &format!("Failed to delete post: {err}"),
                 )
                 .await;
 

@@ -72,7 +72,7 @@ impl CategoryService {
             .with_attributes(attributes)
             .start(&tracer);
 
-        info!("Starting operation: {}", operation_name);
+        info!("Starting operation: {operation_name}");
 
         span.add_event(
             "Operation started",
@@ -131,9 +131,9 @@ impl CategoryService {
         );
 
         if is_success {
-            info!("Operation completed successfully: {}", message);
+            info!("Operation completed successfully: {message}");
         } else {
-            error!("Operation failed: {}", message);
+            error!("Operation failed: {message}");
         }
 
         self.metrics.lock().await.record(method, status, elapsed);
@@ -208,7 +208,7 @@ impl CategoryServiceTrait for CategoryService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to retrieve categories: {}", err),
+                    &format!("Failed to retrieve categories: {err}"),
                 )
                 .await;
 
@@ -261,7 +261,7 @@ impl CategoryServiceTrait for CategoryService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Error retrieving category: {}", err),
+                    &format!("Error retrieving category: {err}"),
                 )
                 .await;
 
@@ -308,7 +308,7 @@ impl CategoryServiceTrait for CategoryService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Category creation failed: {}", err),
+                    &format!("Category creation failed: {err}"),
                 )
                 .await;
 
@@ -355,7 +355,7 @@ impl CategoryServiceTrait for CategoryService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Category update failed: {}", err),
+                    &format!("Category update failed: {err}"),
                 )
                 .await;
 
@@ -398,7 +398,7 @@ impl CategoryServiceTrait for CategoryService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!("Failed to delete category: {}", err),
+                    &format!("Failed to delete category: {err}"),
                 )
                 .await;
 
