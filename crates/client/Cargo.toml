@@ -4,30 +4,37 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shared = { path = "../shared"}
-genproto = { path = "../genproto" }
-async-trait = "0.1.88"
-tonic = "0.13.0"
-axum = { version = "0.8.4", features = ["multipart"] }
-axum-extra = { version = "0.10.1", features = ["cookie"] }
-chrono = { version = "0.4.41", features = ["serde"] }
-dotenv = "0.15.0"
-jsonwebtoken = "9.3.1"
-serde = "1.0.219"
-serde_json = "1.0.140"
-utoipa = { version = "5.3.1", features = ["axum_extras", "chrono"] }
-utoipa-axum = "0.2.0"
-utoipa-swagger-ui = { version = "9.0.1", features = ["axum"] }
-uuid = { version = "1.16.0", features = ["v4"] }
-thiserror = "2.0.12"
-tower-http = { version = "0.6.2", features = ["limit", "trace", "fs"] }
-tokio = { version = "1.45.0", features = ["full"] }
-tracing = "0.1.41"
-prometheus-client = "0.23.1"
-prometheus-client-derive-encode = "0.4.2"
-opentelemetry = "0.30.0"
-opentelemetry-appender-tracing = "0.30.1"
-opentelemetry_sdk = { version="0.30.0", features = ["rt-tokio"] }
-opentelemetry-stdout = { version="0.30.0", features = ["trace"] }
-opentelemetry-otlp = { version="0.30.0", features = ["grpc-tonic"] }
-openssl = { version = "0.10.73", features = ["vendored"] }
+shared.workspace = true
+genproto.workspace = true
+async-trait.workspace = true
+tonic.workspace = true
+axum.workspace = true
+axum-extra.workspace = true
+chrono.workspace = true
+dotenv.workspace = true
+jsonwebtoken.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+utoipa-swagger-ui.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+tower-http.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+prometheus-client.workspace = true
+prometheus-client-derive-encode.workspace = true
+opentelemetry.workspace = true
+opentelemetry-appender-tracing.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-stdout.workspace = true
+opentelemetry-otlp.workspace = true
+openssl.workspace = true
+
+
+[features]
+vendored-openssl = []
+
+[target.'cfg(target_env = "musl")'.dependencies]
+openssl.workspace = true
