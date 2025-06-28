@@ -1,6 +1,8 @@
 FROM rust:1.87.0-slim AS builder
 
 RUN apt-get update && apt-get install -y \
+    perl \
+    perl-utils \
     protobuf-compiler \
     musl-tools \
     pkg-config \
