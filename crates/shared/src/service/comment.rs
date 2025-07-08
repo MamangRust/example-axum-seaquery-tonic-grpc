@@ -175,8 +175,11 @@ impl CommentServiceTrait for CommentService {
                 let response: Vec<CommentResponse> =
                     comments.into_iter().map(CommentResponse::from).collect();
 
-                self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
+                self.cache_store.set_to_cache(
+                    &cache_key,
+                    &response.clone(),
+                    Duration::from_secs(60 * 5),
+                );
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -243,8 +246,11 @@ impl CommentServiceTrait for CommentService {
                 )
                 .await;
 
-                self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
+                self.cache_store.set_to_cache(
+                    &cache_key,
+                    &response.clone(),
+                    Duration::from_secs(60 * 5),
+                );
 
                 Ok(Some(response))
             }

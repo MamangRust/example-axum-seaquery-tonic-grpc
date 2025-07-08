@@ -243,8 +243,11 @@ impl AuthServiceTrait for AuthService {
                 self.complete_tracing_success(&tracing_ctx, method, "User registered successfully")
                     .await;
 
-                self.cache_store
-                    .set_to_cache(&cache_key, &response.data.clone(), Duration::from_secs(60));
+                self.cache_store.set_to_cache(
+                    &cache_key,
+                    &response.data.clone(),
+                    Duration::from_secs(60),
+                );
 
                 Ok(response)
             }

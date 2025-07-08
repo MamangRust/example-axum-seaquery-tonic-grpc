@@ -63,7 +63,7 @@ impl CacheStore {
             }
         };
 
-        let  conn = self.get_conn();
+        let conn = self.get_conn();
         if let Some(mut conn) = conn {
             let result: redis::RedisResult<()> = redis::pipe()
                 .cmd("SET")

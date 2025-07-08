@@ -264,8 +264,11 @@ impl PostsServiceTrait for PostService {
                     data: PostResponse::from(post),
                 });
 
-                self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
+                self.cache_store.set_to_cache(
+                    &cache_key,
+                    &response.clone(),
+                    Duration::from_secs(60 * 5),
+                );
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -342,8 +345,11 @@ impl PostsServiceTrait for PostService {
                         data: first_relation,
                     };
 
-                    self.cache_store
-                        .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
+                    self.cache_store.set_to_cache(
+                        &cache_key,
+                        &response.clone(),
+                        Duration::from_secs(60 * 5),
+                    );
 
                     self.complete_tracing_success(
                         &tracing_ctx,
@@ -443,8 +449,11 @@ impl PostsServiceTrait for PostService {
                 };
 
                 let cache_key = format!("post:id={}", input.post_id);
-                self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
+                self.cache_store.set_to_cache(
+                    &cache_key,
+                    &response.clone(),
+                    Duration::from_secs(60 * 5),
+                );
 
                 self.complete_tracing_success(&tracing_ctx, method, "Post updated successfully")
                     .await;
