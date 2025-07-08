@@ -1,7 +1,6 @@
-use redis::AsyncCommands;
+use redis::{Commands, Connection};
 use serde::{Serialize, de::DeserializeOwned};
-use std::sync::Arc;
-use tokio::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tracing::{debug, error};
 
 #[derive(Clone)]
@@ -16,27 +15,35 @@ impl CacheStore {
         }
     }
 
-    pub async fn get_from_cache<T>(&self, key: &str) -> Option<T>
+    fn get_conn(&self) -> Option<Connection> {
+        match self.redis.get_connection() {
+            Ok(conn) => Some(conn),
+            Err(e) => {
+                error!("Failed to get Redis connection: {:?}", e);
+                None
+            }
+        }
+    }
+
+    pub fn get_from_cache<T>(&self, key: &str) -> Option<T>
     where
         T: DeserializeOwned,
     {
-        let mut conn = match self.redis.get_multiplexed_async_connection().await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to get Redis connection: {:?}", e);
-                return None;
-            }
-        };
+        let mut conn = self.get_conn()?;
+        let result: redis::RedisResult<Option<String>> = conn.get(key);
 
-        let result: redis::RedisResult<String> = conn.get(key).await;
         match result {
-            Ok(data) => match serde_json::from_str::<T>(&data) {
+            Ok(Some(data)) => match serde_json::from_str::<T>(&data) {
                 Ok(parsed) => Some(parsed),
                 Err(e) => {
                     error!("Failed to deserialize cached value: {:?}", e);
                     None
                 }
             },
+            Ok(None) => {
+                debug!("Cache miss for key: {}", key);
+                None
+            }
             Err(e) => {
                 error!("Redis get error for key {}: {:?}", key, e);
                 None
@@ -44,46 +51,43 @@ impl CacheStore {
         }
     }
 
-    pub async fn set_to_cache<T>(&self, key: &str, data: &T, expiration: Duration)
+    pub fn set_to_cache<T>(&self, key: &str, data: &T, expiration: Duration)
     where
         T: Serialize,
     {
         let json_data = match serde_json::to_string(data) {
             Ok(json) => json,
             Err(e) => {
-                error!("Failed to serialize data to JSON: {:?}", e);
+                error!("Failed to serialize data: {:?}", e);
                 return;
             }
         };
 
-        let mut conn = match self.redis.get_multiplexed_async_connection().await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to get Redis connection: {:?}", e);
-                return;
+        let  conn = self.get_conn();
+        if let Some(mut conn) = conn {
+            let result: redis::RedisResult<()> = redis::pipe()
+                .cmd("SET")
+                .arg(key)
+                .arg(&json_data)
+                .ignore()
+                .cmd("EXPIRE")
+                .arg(key)
+                .arg(expiration.as_secs() as usize)
+                .query(&mut conn);
+
+            match result {
+                Ok(_) => debug!("Cached key {} with TTL {:?}", key, expiration),
+                Err(e) => error!("Failed to set cache key {}: {:?}", key, e),
             }
-        };
-
-        let result: redis::RedisResult<()> =
-            conn.set_ex(key, json_data, expiration.as_secs()).await;
-
-        match result {
-            Ok(_) => debug!("Cached data under key {} with TTL {:?}", key, expiration),
-            Err(e) => error!("Failed to set cache for key {}: {:?}", key, e),
         }
     }
 
-    pub async fn delete_from_cache(&self, key: &str) {
-        let mut conn = match self.redis.get_multiplexed_async_connection().await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to get Redis connection: {:?}", e);
-                return;
+    pub fn delete_from_cache(&self, key: &str) {
+        let conn = self.get_conn();
+        if let Some(mut conn) = conn {
+            if let Err(e) = redis::cmd("DEL").arg(key).query::<()>(&mut conn) {
+                error!("Failed to delete key {}: {:?}", key, e);
             }
-        };
-
-        if let Err(e) = conn.del::<_, ()>(key).await {
-            error!("Failed to delete key {}: {:?}", key, e);
         }
     }
 }

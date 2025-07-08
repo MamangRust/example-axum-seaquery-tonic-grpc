@@ -177,7 +177,7 @@ impl AuthServiceTrait for AuthService {
 
         let cache_key = format!("auth:registered:{}", input.email);
 
-        if let Some(cached_user) = self.cache_store.get_from_cache(&cache_key).await {
+        if let Some(cached_user) = self.cache_store.get_from_cache(&cache_key) {
             info!("Found user in cache");
 
             self.complete_tracing_success(
@@ -244,8 +244,7 @@ impl AuthServiceTrait for AuthService {
                     .await;
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response.data.clone(), Duration::from_secs(60))
-                    .await;
+                    .set_to_cache(&cache_key, &response.data.clone(), Duration::from_secs(60));
 
                 Ok(response)
             }
@@ -278,7 +277,7 @@ impl AuthServiceTrait for AuthService {
 
         let cache_key = format!("auth:login:{}", input.email);
 
-        if let Some(cached_token) = self.cache_store.get_from_cache(&cache_key).await {
+        if let Some(cached_token) = self.cache_store.get_from_cache(&cache_key) {
             info!("Found token in cache");
 
             self.complete_tracing_success(
@@ -340,8 +339,7 @@ impl AuthServiceTrait for AuthService {
         };
 
         self.cache_store
-            .set_to_cache(&input.email, &token, Duration::from_secs(60))
-            .await;
+            .set_to_cache(&input.email, &token, Duration::from_secs(60));
 
         let response = ApiResponse {
             status: "success".to_string(),

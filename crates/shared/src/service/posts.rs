@@ -189,7 +189,6 @@ impl PostsServiceTrait for PostService {
         if let Some(cache) = self
             .cache_store
             .get_from_cache::<ApiResponsePagination<Vec<PostResponse>>>(&cache_key)
-            .await
         {
             self.complete_tracing_success(&tracing_ctx, method, "Posts retrieved from cache")
                 .await;
@@ -215,8 +214,7 @@ impl PostsServiceTrait for PostService {
                 };
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(&tracing_ctx, method, "Posts retrieved successfully")
                     .await;
@@ -252,7 +250,6 @@ impl PostsServiceTrait for PostService {
         if let Some(cache) = self
             .cache_store
             .get_from_cache::<ApiResponse<PostResponse>>(&cache_key)
-            .await
         {
             self.complete_tracing_success(&tracing_ctx, Method::Get, "Post retrieved from cache")
                 .await;
@@ -268,8 +265,7 @@ impl PostsServiceTrait for PostService {
                 });
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -326,7 +322,6 @@ impl PostsServiceTrait for PostService {
         if let Some(cache) = self
             .cache_store
             .get_from_cache::<ApiResponse<PostRelationResponse>>(&cache_key)
-            .await
         {
             self.complete_tracing_success(
                 &tracing_ctx,
@@ -348,8 +343,7 @@ impl PostsServiceTrait for PostService {
                     };
 
                     self.cache_store
-                        .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
-                        .await;
+                        .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
 
                     self.complete_tracing_success(
                         &tracing_ctx,
@@ -450,8 +444,7 @@ impl PostsServiceTrait for PostService {
 
                 let cache_key = format!("post:id={}", input.post_id);
                 self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(&tracing_ctx, method, "Post updated successfully")
                     .await;
@@ -493,7 +486,7 @@ impl PostsServiceTrait for PostService {
                 };
 
                 let cache_key = format!("post:id={post_id}");
-                self.cache_store.delete_from_cache(&cache_key).await;
+                self.cache_store.delete_from_cache(&cache_key);
 
                 self.complete_tracing_success(&tracing_ctx, method, "Post deleted successfully")
                     .await;

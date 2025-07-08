@@ -1,5 +1,6 @@
 use anyhow::Result;
 use redis::{Client, Connection, RedisResult};
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct RedisConfig {
@@ -16,6 +17,8 @@ pub struct RedisClient {
 
 impl RedisClient {
     pub async fn new(config: &RedisConfig) -> Result<Self> {
+        info!("Creating redis client");
+
         let url = match &config.password {
             Some(pw) => format!(
                 "redis://:{}@{}:{}/{}",
@@ -25,6 +28,7 @@ impl RedisClient {
         };
 
         let client = Client::open(url)?;
+
         Ok(Self { client })
     }
 
@@ -34,7 +38,13 @@ impl RedisClient {
 
     pub fn ping(&self) -> Result<()> {
         let mut conn = self.get_connection()?;
+
+        info!("Pinging redis");
+
         let _: () = redis::cmd("PING").query(&mut conn)?;
+
+        info!("Pinged redis");
+
         Ok(())
     }
 }

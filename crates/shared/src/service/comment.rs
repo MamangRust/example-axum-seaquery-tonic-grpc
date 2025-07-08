@@ -160,7 +160,7 @@ impl CommentServiceTrait for CommentService {
 
         let cache_key = "comments".to_string();
 
-        if let Some(cache) = self.cache_store.get_from_cache(&cache_key).await {
+        if let Some(cache) = self.cache_store.get_from_cache(&cache_key) {
             self.complete_tracing_success(&tracing_ctx, method, "Comments retrieved from cache")
                 .await;
             return Ok(ApiResponse {
@@ -176,8 +176,7 @@ impl CommentServiceTrait for CommentService {
                     comments.into_iter().map(CommentResponse::from).collect();
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -223,7 +222,6 @@ impl CommentServiceTrait for CommentService {
         if let Some(cache) = self
             .cache_store
             .get_from_cache::<ApiResponse<CommentResponse>>(&cache_key)
-            .await
         {
             self.complete_tracing_success(&tracing_ctx, method, "Comment retrieved from cache")
                 .await;
@@ -246,8 +244,7 @@ impl CommentServiceTrait for CommentService {
                 .await;
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5));
 
                 Ok(Some(response))
             }
@@ -324,8 +321,7 @@ impl CommentServiceTrait for CommentService {
                 let cache_key = format!("comment:id={}", input.id_post_comment);
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &comment, Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &comment, Duration::from_secs(60 * 5));
 
                 Ok(Some(ApiResponse {
                     status: "success".to_string(),
@@ -364,7 +360,7 @@ impl CommentServiceTrait for CommentService {
 
                 let cache_key = format!("comment:id={id}");
 
-                self.cache_store.delete_from_cache(&cache_key).await;
+                self.cache_store.delete_from_cache(&cache_key);
 
                 self.complete_tracing_success(
                     &tracing_ctx,

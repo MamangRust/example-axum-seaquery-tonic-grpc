@@ -26,7 +26,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redis_blog_tonic-data:/data
     restart: unless-stopped
     networks:
       - app_blog_tonic
@@ -134,3 +134,4 @@ networks:
 volumes:
   grafana-blog-tonic-data:
   postgres_blog_tonic-data:
+  redis_blog_tonic-data:

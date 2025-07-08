@@ -190,7 +190,6 @@ impl CategoryServiceTrait for CategoryService {
         if let Some(cached) = self
             .cache_store
             .get_from_cache::<ApiResponsePagination<Vec<CategoryResponse>>>(&cache_key)
-            .await
         {
             info!("Found categories in cache");
 
@@ -221,8 +220,7 @@ impl CategoryServiceTrait for CategoryService {
                 };
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -269,7 +267,6 @@ impl CategoryServiceTrait for CategoryService {
         if let Some(cached) = self
             .cache_store
             .get_from_cache::<ApiResponse<CategoryResponse>>(&cache_key)
-            .await
         {
             info!("Found category in cache");
 
@@ -288,8 +285,7 @@ impl CategoryServiceTrait for CategoryService {
                 };
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -394,8 +390,7 @@ impl CategoryServiceTrait for CategoryService {
                 let cache_key = format!("category:id={}", input.id);
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -442,7 +437,7 @@ impl CategoryServiceTrait for CategoryService {
 
                 let cache_key = format!("category:id={id}");
 
-                self.cache_store.delete_from_cache(&cache_key).await;
+                self.cache_store.delete_from_cache(&cache_key);
 
                 self.complete_tracing_success(
                     &tracing_ctx,

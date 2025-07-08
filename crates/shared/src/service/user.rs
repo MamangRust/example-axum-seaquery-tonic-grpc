@@ -180,7 +180,6 @@ impl UserServiceTrait for UserService {
         if let Some(cached) = self
             .cache_store
             .get_from_cache::<ApiResponsePagination<Vec<UserResponse>>>(&cache_key)
-            .await
         {
             self.complete_tracing_success(&tracing_ctx, method, "Users retrieved from cache")
                 .await;
@@ -207,8 +206,7 @@ impl UserServiceTrait for UserService {
                 };
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(&tracing_ctx, method, "Users retrieved successfully")
                     .await;
@@ -308,7 +306,6 @@ impl UserServiceTrait for UserService {
         if let Some(cached) = self
             .cache_store
             .get_from_cache::<ApiResponse<UserResponse>>(&cache_key)
-            .await
         {
             self.complete_tracing_success(&tracing_ctx, method, "User retrieved from cache")
                 .await;
@@ -325,8 +322,7 @@ impl UserServiceTrait for UserService {
                 });
 
                 self.cache_store
-                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
-                    .await;
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5));
 
                 self.complete_tracing_success(&tracing_ctx, method, "User retrieved successfully")
                     .await;
@@ -384,13 +380,11 @@ impl UserServiceTrait for UserService {
                     data: UserResponse::from(user),
                 });
 
-                self.cache_store
-                    .set_to_cache(
-                        &format!("user:email={user_email}"),
-                        &response,
-                        Duration::from_secs(60 * 5),
-                    )
-                    .await;
+                self.cache_store.set_to_cache(
+                    &format!("user:email={user_email}"),
+                    &response,
+                    Duration::from_secs(60 * 5),
+                );
 
                 self.complete_tracing_success(&tracing_ctx, method, "User updated successfully")
                     .await;
@@ -432,8 +426,7 @@ impl UserServiceTrait for UserService {
                 };
 
                 self.cache_store
-                    .delete_from_cache(&format!("user:email={email}"))
-                    .await;
+                    .delete_from_cache(&format!("user:email={email}"));
 
                 self.complete_tracing_success(&tracing_ctx, method, "User deleted successfully")
                     .await;
