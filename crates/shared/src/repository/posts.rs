@@ -10,7 +10,7 @@ use crate::schema::posts::Posts;
 use async_trait::async_trait;
 use sea_query::{Expr, Func, JoinType, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use tracing::info;
+use tracing::{error, info};
 
 pub struct PostRepository {
     db_pool: ConnectionPool,
@@ -30,6 +30,11 @@ impl PostsRepositoryTrait for PostRepository {
         page_size: i32,
         search: Option<String>,
     ) -> Result<(Vec<Post>, i64), AppError> {
+        info!(
+            "Getting all posts - page: {page}, page_size: {page_size}, search: {:?}",
+            search
+        );
+
         let offset = (page - 1) * page_size;
 
         let mut select_query = Query::select();
@@ -67,15 +72,28 @@ impl PostsRepositoryTrait for PostRepository {
         }
 
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
-        let total: (i64,) = sqlx::query_as_with(&count_sql, count_values)
-            .fetch_one(&self.db_pool)
-            .await?;
 
-        Ok((posts, total.0))
+        let total_result = sqlx::query_as_with::<_, (i64,), _>(&count_sql, count_values)
+            .fetch_one(&self.db_pool)
+            .await;
+
+        let total = match total_result {
+            Ok(count) => count.0,
+            Err(e) => {
+                error!("Error counting posts: {}", e);
+                return Err(AppError::SqlxError(e));
+            }
+        };
+
+        info!("Found {} posts out of total {total}", posts.len(),);
+
+        Ok((posts, total))
     }
 
     async fn get_post(&self, post_id: i32) -> Result<Option<Post>, AppError> {
-        let query = Query::select()
+        info!("Getting post with ID: {post_id}");
+
+        let (sql, values) = Query::select()
             .columns([
                 Posts::Id,
                 Posts::Title,
@@ -87,20 +105,22 @@ impl PostsRepositoryTrait for PostRepository {
             ])
             .from(Posts::Table)
             .and_where(Expr::col(Posts::Id).eq(post_id))
-            .to_owned();
-
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+            .build_sqlx(PostgresQueryBuilder);
 
         let result = sqlx::query_as_with::<_, Post, _>(&sql, values)
             .fetch_optional(&self.db_pool)
             .await
-            .map_err(AppError::SqlxError)?;
+            .map_err(AppError::from)?;
+
+        info!("Found post with ID: {post_id}");
 
         Ok(result)
     }
 
     async fn get_post_relation(&self, post_id: i32) -> Result<Vec<PostRelationResponse>, AppError> {
-        let query = Query::select()
+        info!("Getting post relation with ID: {post_id}");
+
+        let (sql, values) = Query::select()
             .column((Posts::Table, Posts::Id))
             .column((Posts::Table, Posts::Title))
             .column((Comments::Table, Comments::Id))
@@ -115,9 +135,7 @@ impl PostsRepositoryTrait for PostRepository {
                     .equals((Comments::Table, Comments::IdPostComment)),
             )
             .and_where(Expr::col((Posts::Table, Posts::Id)).eq(post_id))
-            .to_owned();
-
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+            .build_sqlx(PostgresQueryBuilder);
 
         let result: Vec<PostRelationModel> = sqlx::query_as_with(&sql, values)
             .fetch_all(&self.db_pool)
@@ -126,11 +144,15 @@ impl PostsRepositoryTrait for PostRepository {
 
         let responses = result.into_iter().map(PostRelationResponse::from).collect();
 
+        info!("Found post relation with ID: {post_id}");
+
         Ok(responses)
     }
 
     async fn create_post(&self, input: &CreatePostRequest) -> Result<Post, AppError> {
-        let query = Query::insert()
+        info!("Creating new post: {}", input.title);
+
+        let (sql, values) = Query::insert()
             .into_table(Posts::Table)
             .columns([
                 Posts::Title,
@@ -140,7 +162,7 @@ impl PostsRepositoryTrait for PostRepository {
                 Posts::UserId,
                 Posts::UserName,
             ])
-            .values_panic([
+            .values([
                 input.title.clone().into(),
                 input.file.clone().into(),
                 input.body.clone().into(),
@@ -148,25 +170,25 @@ impl PostsRepositoryTrait for PostRepository {
                 input.user_id.into(),
                 input.user_name.clone().into(),
             ])
-            .returning_all()
-            .to_owned();
-
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+            .unwrap()
+            .build_sqlx(PostgresQueryBuilder);
 
         let post: Post = sqlx::query_as_with(&sql, values)
             .fetch_one(&self.db_pool)
             .await
             .map_err(AppError::SqlxError)?;
 
+        info!("New post inserted with ID: {}", post.id);
+
         Ok(post)
     }
 
     async fn update_post(&self, input: &UpdatePostRequest) -> Result<Post, AppError> {
-        let id = input
-            .post_id
-            .ok_or_else(|| AppError::ValidationError("Post ID is required".into()))?;
+        info!("Updating post ID {}", input.post_id);
 
-        let query = Query::update()
+        let id = input.post_id;
+
+        let (sql, values) = Query::update()
             .table(Posts::Table)
             .values([
                 (Posts::Title, input.title.clone().into()),
@@ -177,19 +199,20 @@ impl PostsRepositoryTrait for PostRepository {
                 (Posts::UserName, input.user_name.clone().into()),
             ])
             .and_where(Expr::col(Posts::Id).eq(id))
-            .returning_all()
-            .to_owned();
-
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+            .build_sqlx(PostgresQueryBuilder);
 
         let post: Post = sqlx::query_as_with(&sql, values)
             .fetch_one(&self.db_pool)
             .await
             .map_err(AppError::SqlxError)?;
 
+        info!("Post updated with ID: {}", post.id);
+
         Ok(post)
     }
     async fn delete_post(&self, post_id: i32) -> Result<(), AppError> {
+        info!("Deleting post ID: {post_id}");
+
         let query = Query::delete()
             .from_table(Posts::Table)
             .and_where(Expr::col(Posts::Id).eq(post_id))
@@ -206,7 +229,17 @@ impl PostsRepositoryTrait for PostRepository {
             return Err(AppError::SqlxError(sqlx::Error::RowNotFound));
         }
 
-        info!("posts ID: {post_id} deleted successfully");
-        Ok(())
+        match result.rows_affected() {
+            0 => {
+                error!("No posts found to delete with ID: {post_id}");
+                Err(AppError::NotFound(format!(
+                    "posts with ID {post_id} not found"
+                )))
+            }
+            _ => {
+                info!("posts ID: {post_id} deleted successfully");
+                Ok(())
+            }
+        }
     }
 }

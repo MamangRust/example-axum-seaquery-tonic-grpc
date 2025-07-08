@@ -113,7 +113,7 @@ impl CommentService for CommentServiceImpl {
         let req = request.get_ref();
 
         let body = SharedUpdateCommentRequest {
-            id_post_comment: Some(req.id_post_comment),
+            id_post_comment: req.id_post_comment,
             user_name_comment: req.user_name_comment.clone(),
             comment: req.comment.clone(),
         };

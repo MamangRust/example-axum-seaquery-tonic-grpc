@@ -117,7 +117,7 @@ impl UserService for UserServiceImpl {
         let req = request.get_ref();
 
         let body = SharedUpdateUserRequest {
-            id: Some(req.id),
+            id: req.id,
             firstname: Some(req.firstname.clone()),
             lastname: Some(req.lastname.clone()),
             email: Some(req.email.clone()),

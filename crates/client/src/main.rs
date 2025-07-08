@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use dotenv::dotenv;
 use seaquery_client::{handler::AppRouter, state::AppState};
 use shared::{
@@ -6,27 +7,30 @@ use shared::{
 };
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     dotenv().ok();
 
-    let mytelemetry = Telemetry::new("myclient");
+    let telemetry = Telemetry::new("myclient");
 
-    let tracer_provider = mytelemetry.init_tracer();
-
-    let meter_provider = mytelemetry.init_meter();
-    let logger_provider = mytelemetry.init_logger();
+    let tracer_provider = telemetry.init_tracer();
+    let meter_provider = telemetry.init_meter();
+    let logger_provider = telemetry.init_logger();
 
     init_logger(logger_provider.clone());
 
-    let config = Config::init();
+    let config = Config::init().context("Failed to load configuration")?;
 
     let port = config.port;
 
-    let state = AppState::new(&config.jwt_secret).await;
+    let state = AppState::new(&config.jwt_secret)
+        .await
+        .context("Failed to create AppState")?;
 
     println!("🚀 Server started successfully");
 
-    AppRouter::serve(port, state.expect("Failed to create state")).await?;
+    AppRouter::serve(port, state)
+        .await
+        .context("Failed to start server")?;
 
     let mut shutdown_errors = Vec::new();
 
@@ -39,12 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = logger_provider.shutdown() {
         shutdown_errors.push(format!("logger provider: {e}"));
     }
+
     if !shutdown_errors.is_empty() {
-        return Err(format!(
+        anyhow::bail!(
             "Failed to shutdown providers:\n{}",
             shutdown_errors.join("\n")
-        )
-        .into());
+        );
     }
+
     Ok(())
 }

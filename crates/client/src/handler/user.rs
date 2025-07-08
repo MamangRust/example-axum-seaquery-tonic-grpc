@@ -1,4 +1,7 @@
-use crate::{middleware::jwt, state::AppState};
+use crate::{
+    middleware::{jwt, validate::SimpleValidatedJson},
+    state::AppState,
+};
 use axum::{
     extract::{Json, Path, Query, State},
     http::StatusCode,
@@ -77,7 +80,7 @@ pub async fn get_user(
 )]
 pub async fn create_user(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<CreateUserRequest>,
+    SimpleValidatedJson(body): SimpleValidatedJson<CreateUserRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     match data.di_container.user_service.create(&body).await {
         Ok(response) => Ok((StatusCode::CREATED, Json(json!(response)))),
@@ -104,9 +107,9 @@ pub async fn create_user(
 pub async fn update_user(
     State(data): State<Arc<AppState>>,
     Path(id): Path<i32>,
-    Json(mut body): Json<UpdateUserRequest>,
+    SimpleValidatedJson(mut body): SimpleValidatedJson<UpdateUserRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    body.id = Some(id);
+    body.id = id;
 
     match data.di_container.user_service.update(&body).await {
         Ok(response) => Ok((StatusCode::OK, Json(json!(response)))),

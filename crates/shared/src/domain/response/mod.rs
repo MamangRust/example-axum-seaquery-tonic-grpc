@@ -1,6 +1,5 @@
 use core::fmt;
-
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::Formatter;
 use utoipa::ToSchema;
 
@@ -20,7 +19,7 @@ pub use self::pagination::Pagination;
 pub use self::post::{PostRelationResponse, PostResponse};
 pub use self::user::UserResponse;
 
-#[derive(Debug, Serialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct ApiResponse<T> {
     pub status: String,
     pub message: String,
@@ -36,7 +35,7 @@ impl<T: Serialize> fmt::Display for ApiResponse<T> {
     }
 }
 
-#[derive(Debug, Serialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct ApiResponsePagination<T> {
     pub status: String,
     pub message: String,
@@ -53,7 +52,7 @@ impl<T: Serialize> fmt::Display for ApiResponsePagination<T> {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ErrorResponse {
     pub status: String,
     pub message: String,
@@ -83,6 +82,7 @@ impl From<AppError> for ErrorResponse {
                 ("error".to_string(), "Email already exists".to_string())
             }
             AppError::ValidationError(_) => ("error".to_string(), "Validation error".to_string()),
+            AppError::InternalError(ref msg) => ("error".to_string(), msg.clone()),
         };
         ErrorResponse { status, message }
     }

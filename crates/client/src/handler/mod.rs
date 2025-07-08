@@ -6,6 +6,7 @@ mod user;
 
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::StatusCode;
@@ -107,7 +108,7 @@ pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
 pub struct AppRouter;
 
 impl AppRouter {
-    pub async fn serve(port: u16, app_state: AppState) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn serve(port: u16, app_state: AppState) -> Result<()> {
         let shared_state = Arc::new(app_state);
 
         let mut router = OpenApiRouter::with_openapi(ApiDoc::openapi())
@@ -130,10 +131,16 @@ impl AppRouter {
             router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api.clone()));
 
         let addr = format!("0.0.0.0:{port}");
-        let listener = TcpListener::bind(addr).await?;
+        let listener = TcpListener::bind(&addr)
+            .await
+            .with_context(|| format!("Failed to bind to address {addr}"))?;
+
         println!("Server running on http://{}", listener.local_addr()?);
 
-        axum::serve(listener, router).await?;
+        axum::serve(listener, router)
+            .await
+            .context("Failed to start Axum server")?;
+
         Ok(())
     }
 }

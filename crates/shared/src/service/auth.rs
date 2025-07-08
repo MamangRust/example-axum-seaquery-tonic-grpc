@@ -5,13 +5,14 @@ use opentelemetry::{
     trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
 use prometheus_client::registry::Registry;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use tonic::Request;
 use tracing::{error, info};
 
 use crate::{
     abstract_trait::{AuthServiceTrait, DynUserRepository},
+    cache::CacheStore,
     config::{Hashing, JwtConfig},
     domain::{
         ApiResponse, CreateUserRequest, ErrorResponse, LoginRequest, RegisterRequest, UserResponse,
@@ -25,6 +26,7 @@ pub struct AuthService {
     hashing: Hashing,
     jwt_config: JwtConfig,
     metrics: Arc<Mutex<Metrics>>,
+    cache_store: Arc<CacheStore>,
 }
 
 impl std::fmt::Debug for AuthService {
@@ -44,6 +46,7 @@ impl AuthService {
         jwt_config: JwtConfig,
         metrics: Arc<Mutex<Metrics>>,
         registry: &mut Registry,
+        cache_store: Arc<CacheStore>,
     ) -> Self {
         registry.register(
             "auth_service_request_counter",
@@ -61,6 +64,7 @@ impl AuthService {
             hashing,
             jwt_config,
             metrics,
+            cache_store,
         }
     }
 
@@ -171,6 +175,25 @@ impl AuthServiceTrait for AuthService {
         let mut request = Request::new(input.clone());
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = format!("auth:registered:{}", input.email);
+
+        if let Some(cached_user) = self.cache_store.get_from_cache(&cache_key).await {
+            info!("Found user in cache");
+
+            self.complete_tracing_success(
+                &tracing_ctx,
+                method,
+                "User already registered (from cache)",
+            )
+            .await;
+
+            return Ok(ApiResponse {
+                status: "success".to_string(),
+                message: "User already registered (from cache)".to_string(),
+                data: cached_user,
+            });
+        }
+
         match self.repository.find_by_email_exists(&input.email).await {
             Ok(true) => {
                 self.complete_tracing_error(&tracing_ctx, method, "Email already exists")
@@ -220,6 +243,10 @@ impl AuthServiceTrait for AuthService {
                 self.complete_tracing_success(&tracing_ctx, method, "User registered successfully")
                     .await;
 
+                self.cache_store
+                    .set_to_cache(&cache_key, &response.data.clone(), Duration::from_secs(60))
+                    .await;
+
                 Ok(response)
             }
             Err(err) => {
@@ -248,6 +275,25 @@ impl AuthServiceTrait for AuthService {
 
         let mut request = Request::new(input.clone());
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
+
+        let cache_key = format!("auth:login:{}", input.email);
+
+        if let Some(cached_token) = self.cache_store.get_from_cache(&cache_key).await {
+            info!("Found token in cache");
+
+            self.complete_tracing_success(
+                &tracing_ctx,
+                method,
+                "User already logged in (from cache)",
+            )
+            .await;
+
+            return Ok(ApiResponse {
+                status: "success".to_string(),
+                message: "User already logged in (from cache)".to_string(),
+                data: cached_token,
+            });
+        }
 
         let user = match self.repository.find_by_email(&input.email).await {
             Ok(Some(user)) => user,
@@ -292,6 +338,10 @@ impl AuthServiceTrait for AuthService {
                 return Err(ErrorResponse::from(err));
             }
         };
+
+        self.cache_store
+            .set_to_cache(&input.email, &token, Duration::from_secs(60))
+            .await;
 
         let response = ApiResponse {
             status: "success".to_string(),

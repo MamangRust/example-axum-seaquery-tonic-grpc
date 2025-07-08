@@ -1,4 +1,7 @@
-use crate::{middleware::jwt, state::AppState};
+use crate::{
+    middleware::{jwt, validate::SimpleValidatedJson},
+    state::AppState,
+};
 use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
@@ -122,9 +125,9 @@ pub async fn create_comment(
 pub async fn update_comment(
     State(data): State<Arc<AppState>>,
     Path(id): Path<i32>,
-    Json(mut body): Json<UpdateCommentRequest>,
+    SimpleValidatedJson(mut body): SimpleValidatedJson<UpdateCommentRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    body.id_post_comment = Some(id);
+    body.id_post_comment = id;
 
     match data.di_container.comment_service.update(&body).await {
         Ok(comment) => Ok((StatusCode::OK, Json(json!(comment)))),

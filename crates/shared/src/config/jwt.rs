@@ -1,10 +1,10 @@
+use crate::utils::AppError;
+use anyhow::Result;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{
     DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::ErrorKind as JwtError,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::utils::AppError;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {

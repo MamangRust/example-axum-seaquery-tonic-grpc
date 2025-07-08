@@ -126,8 +126,8 @@ impl CategoryService for CategoryServiceImpl {
         let req = request.get_ref();
 
         let body = SharedUpdateCategoryRequest {
-            id: Some(req.id),
-            name: Some(req.name.clone()),
+            id: req.id,
+            name: req.name.clone(),
         };
 
         match self

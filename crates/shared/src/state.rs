@@ -6,6 +6,7 @@ use crate::{
     config::{ConnectionPool, Hashing, JwtConfig},
     utils::{DependenciesInject, Metrics, SystemMetrics, run_metrics_collector},
 };
+
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub registry: Arc<Mutex<Registry>>,

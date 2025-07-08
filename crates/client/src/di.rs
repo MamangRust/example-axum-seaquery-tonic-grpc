@@ -7,6 +7,7 @@ use crate::{
     },
 };
 
+use anyhow::Result;
 use prometheus_client::registry::Registry;
 use shared::{abstract_trait::DynFileService, service::FileService, utils::Metrics};
 use std::sync::Arc;
@@ -39,7 +40,7 @@ impl DependenciesInject {
         clients: GrpcClients,
         metrics: Arc<Mutex<Metrics>>,
         registry: &mut Registry,
-    ) -> Self {
+    ) -> Result<Self> {
         let auth_service: DynAuthService =
             Arc::new(AuthService::new(clients.auth, metrics.clone(), registry).await);
         let user_service: DynUserService =
@@ -52,13 +53,13 @@ impl DependenciesInject {
             Arc::new(CommentService::new(clients.comment, metrics.clone(), registry).await);
         let file_service: DynFileService = Arc::new(FileService::default());
 
-        Self {
+        Ok(Self {
             category_service,
             post_service,
             comment_service,
             user_service,
             auth_service,
             file_service,
-        }
+        })
     }
 }

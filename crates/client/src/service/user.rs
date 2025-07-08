@@ -312,7 +312,7 @@ impl UserServiceTrait for UserService {
         );
 
         let mut update_request = UpdateUserRequest {
-            id: req.id.unwrap_or_default(),
+            id: req.id,
             ..Default::default()
         };
 

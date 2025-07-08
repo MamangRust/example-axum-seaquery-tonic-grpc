@@ -320,8 +320,8 @@ impl CategoryServiceTrait for CategoryService {
         req: &DomainUpdateCategoryRequest,
     ) -> Result<ApiResponse<CategoryResponse>, ErrorResponse> {
         let method = Method::Put;
-        let category_name = req.name.as_deref().unwrap_or("");
-        let category_id = req.id.unwrap_or_default();
+        let category_name = req.name.clone();
+        let category_id = req.id;
 
         let tracing_ctx = self.start_tracing(
             "UpdateCategory",
@@ -333,13 +333,10 @@ impl CategoryServiceTrait for CategoryService {
             ],
         );
 
-        let mut update_request = UpdateCategoryRequest {
+        let update_request = UpdateCategoryRequest {
             id: category_id,
-            ..Default::default()
+            name: category_name.to_string(),
         };
-        if let Some(name) = &req.name {
-            update_request.name = name.clone();
-        }
 
         let mut request = Request::new(update_request);
         self.inject_trace_context(&tracing_ctx.cx, &mut request);

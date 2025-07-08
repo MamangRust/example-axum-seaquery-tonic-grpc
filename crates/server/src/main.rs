@@ -1,9 +1,9 @@
+use anyhow::{Context, Result};
 use axum::{
     body::Body,
     extract::State,
     http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
-    routing::get,
 };
 use genproto::{
     auth::auth_service_server::AuthServiceServer,
@@ -17,8 +17,8 @@ use shared::{
     state::AppState,
     utils::{Telemetry, init_logger},
 };
-use std::{error::Error, sync::Arc};
-use tonic::transport::Server;
+use std::sync::Arc;
+use tokio::net::TcpListener;
 
 mod service;
 
@@ -45,7 +45,7 @@ pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+async fn main() -> Result<()> {
     dotenv::dotenv().ok();
 
     let mytelemetry = Telemetry::new("myserver");
@@ -54,10 +54,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let logger_provider = mytelemetry.init_logger();
     init_logger(logger_provider.clone());
 
-    let config = Config::init();
+    let config = Config::init().context("Failed to load configuration")?;
+
     let db_pool = ConnectionManager::new_pool(&config.database_url, config.run_migrations)
         .await
-        .expect("Error initializing database connection pool");
+        .context("Failed to initialize database pool")?;
 
     let state = Arc::new(AppState::new(db_pool, &config.jwt_secret).await);
 
@@ -67,10 +68,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let service_comment = service::comment::CommentServiceImpl::new(state.clone());
     let service_category = service::category::CategoryServiceImpl::new(state.clone());
 
-    let addr = "0.0.0.0:50051".parse()?;
+    let addr = "0.0.0.0:50051"
+        .parse()
+        .context("Failed to parse gRPC address")?;
 
     let grpc_server = tokio::spawn(async move {
-        Server::builder()
+        tonic::transport::Server::builder()
             .add_service(AuthServiceServer::new(service_auth))
             .add_service(UserServiceServer::new(service_user))
             .add_service(PostsServiceServer::new(service_post))
@@ -81,10 +84,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     });
 
     let app = axum::Router::new()
-        .route("/metrics", get(metrics_handler))
+        .route("/metrics", axum::routing::get(metrics_handler))
         .with_state(state.clone());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    let listener = TcpListener::bind("0.0.0.0:8080")
+        .await
+        .context("Failed to bind Axum metrics listener")?;
 
     println!("gRPC Server running on 0.0.0.0:50051");
     println!("Metrics Server running on http://0.0.0.0:8080");
@@ -92,10 +97,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     let axum_server = tokio::spawn(async move { axum::serve(listener, app).await });
 
     let (grpc_result, axum_result) = tokio::try_join!(grpc_server, axum_server)?;
-    grpc_result?;
-    axum_result?;
+
+    grpc_result.context("gRPC server failed")?;
+    axum_result.context("Axum server failed")?;
 
     let mut shutdown_errors = Vec::new();
+
     if let Err(e) = tracer_provider.shutdown() {
         shutdown_errors.push(format!("tracer provider: {e}"));
     }
@@ -105,12 +112,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
     if let Err(e) = logger_provider.shutdown() {
         shutdown_errors.push(format!("logger provider: {e}"));
     }
+
     if !shutdown_errors.is_empty() {
-        return Err(format!(
+        anyhow::bail!(
             "Failed to shutdown providers:\n{}",
             shutdown_errors.join("\n")
-        )
-        .into());
+        );
     }
+
     Ok(())
 }

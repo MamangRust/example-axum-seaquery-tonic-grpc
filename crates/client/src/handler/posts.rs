@@ -334,7 +334,7 @@ pub async fn update_post(
     };
 
     let post_data = UpdatePostRequest {
-        post_id: Some(post_id),
+        post_id,
         title: title.unwrap_or_default(),
         body: body.unwrap_or_default(),
         file: uploaded_file_name,

@@ -1,4 +1,7 @@
-use crate::{middleware::jwt, state::AppState};
+use crate::{
+    middleware::{jwt, validate::SimpleValidatedJson},
+    state::AppState,
+};
 use axum::{
     Extension,
     extract::{Json, Path, Query, State},
@@ -91,7 +94,7 @@ pub async fn get_category(
 )]
 pub async fn create_category(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<CreateCategoryRequest>,
+    SimpleValidatedJson(body): SimpleValidatedJson<CreateCategoryRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     match data.di_container.category_service.create(&body).await {
         Ok(category) => Ok((StatusCode::CREATED, Json(json!(category)))),
@@ -118,9 +121,9 @@ pub async fn create_category(
 pub async fn update_category(
     State(data): State<Arc<AppState>>,
     Path(id): Path<i32>,
-    Json(mut body): Json<UpdateCategoryRequest>,
+    SimpleValidatedJson(mut body): SimpleValidatedJson<UpdateCategoryRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    body.id = Some(id);
+    body.id = id;
 
     match data.di_container.category_service.update(&body).await {
         Ok(category) => Ok((StatusCode::OK, Json(json!(category)))),

@@ -1,5 +1,6 @@
 use crate::{
     abstract_trait::{CommentServiceTrait, DynCommentRepository},
+    cache::CacheStore,
     domain::{
         ApiResponse, CommentResponse, CreateCommentRequest, ErrorResponse, UpdateCommentRequest,
     },
@@ -12,7 +13,7 @@ use opentelemetry::{
     trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
 use prometheus_client::registry::Registry;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use tonic::Request;
 use tracing::{error, info};
@@ -21,6 +22,7 @@ use tracing::{error, info};
 pub struct CommentService {
     repository: DynCommentRepository,
     metrics: Arc<Mutex<Metrics>>,
+    cache_store: Arc<CacheStore>,
 }
 
 impl std::fmt::Debug for CommentService {
@@ -36,6 +38,7 @@ impl CommentService {
         repository: DynCommentRepository,
         metrics: Arc<Mutex<Metrics>>,
         registry: &mut Registry,
+        cache_store: Arc<CacheStore>,
     ) -> Self {
         registry.register(
             "category_service_request_counter",
@@ -51,6 +54,7 @@ impl CommentService {
         Self {
             repository,
             metrics,
+            cache_store,
         }
     }
 
@@ -154,9 +158,26 @@ impl CommentServiceTrait for CommentService {
         let mut request = Request::new(());
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = "comments".to_string();
+
+        if let Some(cache) = self.cache_store.get_from_cache(&cache_key).await {
+            self.complete_tracing_success(&tracing_ctx, method, "Comments retrieved from cache")
+                .await;
+            return Ok(ApiResponse {
+                status: "success".to_string(),
+                message: "Comments retrieved from cache".to_string(),
+                data: cache,
+            });
+        }
+
         match self.repository.find_all().await {
             Ok(comments) => {
-                let response = comments.into_iter().map(CommentResponse::from).collect();
+                let response: Vec<CommentResponse> =
+                    comments.into_iter().map(CommentResponse::from).collect();
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
+                    .await;
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -197,9 +218,25 @@ impl CommentServiceTrait for CommentService {
         let mut request = Request::new(id);
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = format!("comment:id={id}");
+
+        if let Some(cache) = self
+            .cache_store
+            .get_from_cache::<ApiResponse<CommentResponse>>(&cache_key)
+            .await
+        {
+            self.complete_tracing_success(&tracing_ctx, method, "Comment retrieved from cache")
+                .await;
+            return Ok(Some(cache));
+        }
+
         match self.repository.find_by_id(id).await {
             Ok(comment) => {
-                let response = comment.map(CommentResponse::from);
+                let response = ApiResponse {
+                    status: "success".to_string(),
+                    message: "Comment retrieved successfully".to_string(),
+                    data: CommentResponse::from(comment),
+                };
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -208,11 +245,11 @@ impl CommentServiceTrait for CommentService {
                 )
                 .await;
 
-                Ok(response.map(|comment| ApiResponse {
-                    status: "success".to_string(),
-                    message: "Comment retrieved successfully".to_string(),
-                    data: comment,
-                }))
+                self.cache_store
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
+                    .await;
+
+                Ok(Some(response))
             }
             Err(err) => {
                 self.complete_tracing_error(&tracing_ctx, method, "Failed to retrieve comment")
@@ -284,6 +321,12 @@ impl CommentServiceTrait for CommentService {
                 self.complete_tracing_success(&tracing_ctx, method, "Comment updated successfully")
                     .await;
 
+                let cache_key = format!("comment:id={}", input.id_post_comment);
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &comment, Duration::from_secs(60 * 5))
+                    .await;
+
                 Ok(Some(ApiResponse {
                     status: "success".to_string(),
                     message: "Comment updated successfully".to_string(),
@@ -318,6 +361,10 @@ impl CommentServiceTrait for CommentService {
                     message: "Comment deleted successfully".to_string(),
                     data: (),
                 };
+
+                let cache_key = format!("comment:id={id}");
+
+                self.cache_store.delete_from_cache(&cache_key).await;
 
                 self.complete_tracing_success(
                     &tracing_ctx,

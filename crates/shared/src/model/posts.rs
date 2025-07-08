@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 
-#[derive(Debug, FromRow, Clone)]
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct Post {
     pub id: i32,
     pub title: String,
@@ -11,7 +12,7 @@ pub struct Post {
     pub user_name: String,
 }
 
-#[derive(Debug, sqlx::FromRow, Clone)]
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize, Clone)]
 pub struct PostRelationModel {
     pub post_id: i32,
     pub title: String,

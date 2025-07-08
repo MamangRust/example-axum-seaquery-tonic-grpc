@@ -29,16 +29,9 @@ impl UserRepositoryTrait for UserRepository {
         search: Option<String>,
     ) -> Result<(Vec<User>, i64), AppError> {
         info!(
-            "Finding all users - page: {page}, page_size: {page_size}, search: {:?}",
+            "Getting all users - page: {page}, page_size: {page_size}, search: {:?}",
             search
         );
-
-        if page <= 0 || page_size <= 0 {
-            return Err(AppError::ValidationError(
-                "Page and page_size must be positive".to_string(),
-            ));
-        }
-
         let offset = (page - 1) * page_size;
 
         let mut select_query = Query::select();
@@ -105,13 +98,12 @@ impl UserRepositoryTrait for UserRepository {
     }
 
     async fn find_by_email_exists(&self, email: &str) -> Result<bool, AppError> {
-        let query = Query::select()
+        let (sql, values) = Query::select()
             .expr(Expr::col(Users::Id).count())
             .from(Users::Table)
             .and_where(Expr::col(Users::Email).eq(email))
-            .to_owned();
+            .build_sqlx(PostgresQueryBuilder);
 
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
         let count: i64 = sqlx::query_scalar_with(&sql, values)
             .fetch_one(&self.db_pool)
             .await?;
@@ -120,7 +112,7 @@ impl UserRepositoryTrait for UserRepository {
     }
 
     async fn create_user(&self, input: &CreateUserRequest) -> Result<User, AppError> {
-        let query = Query::insert()
+        let (sql, values) = Query::insert()
             .into_table(Users::Table)
             .columns([
                 Users::Firstname,
@@ -128,16 +120,16 @@ impl UserRepositoryTrait for UserRepository {
                 Users::Email,
                 Users::Password,
             ])
-            .values_panic([
+            .values([
                 input.firstname.clone().into(),
                 input.lastname.clone().into(),
                 input.email.clone().into(),
                 input.password.clone().into(),
             ])
-            .returning_all()
-            .to_owned();
+            .unwrap()
+            .to_owned()
+            .build_sqlx(PostgresQueryBuilder);
 
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
         let user: User = sqlx::query_as_with(&sql, values)
             .fetch_one(&self.db_pool)
             .await?;
@@ -146,7 +138,7 @@ impl UserRepositoryTrait for UserRepository {
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, AppError> {
-        let query = Query::select()
+        let (sql, values) = Query::select()
             .columns([
                 Users::Id,
                 Users::Firstname,
@@ -156,9 +148,9 @@ impl UserRepositoryTrait for UserRepository {
             ])
             .from(Users::Table)
             .and_where(Expr::col(Users::Email).eq(email))
-            .to_owned();
+            .to_owned()
+            .build_sqlx(PostgresQueryBuilder);
 
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
         let user = sqlx::query_as_with(&sql, values)
             .fetch_optional(&self.db_pool)
             .await?;
@@ -167,7 +159,9 @@ impl UserRepositoryTrait for UserRepository {
     }
 
     async fn find_by_id(&self, id: i32) -> Result<Option<User>, AppError> {
-        let query = Query::select()
+        info!("Finding user by id: {id}");
+
+        let (sql, values) = Query::select()
             .columns([
                 Users::Id,
                 Users::Firstname,
@@ -177,20 +171,22 @@ impl UserRepositoryTrait for UserRepository {
             ])
             .from(Users::Table)
             .and_where(Expr::col(Users::Id).eq(id))
-            .to_owned();
+            .to_owned()
+            .build_sqlx(PostgresQueryBuilder);
 
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
         let user = sqlx::query_as_with(&sql, values)
             .fetch_optional(&self.db_pool)
             .await?;
+
+        info!("successfully found user by id: {id}");
 
         Ok(user)
     }
 
     async fn update_user(&self, input: &UpdateUserRequest) -> Result<User, AppError> {
-        let id = input
-            .id
-            .ok_or_else(|| AppError::ValidationError("User ID is required".into()))?;
+        info!("Updating user ID {}", input.id);
+
+        let id = input.id;
 
         let mut update_query = Query::update();
         let mut query = update_query
@@ -212,23 +208,29 @@ impl UserRepositoryTrait for UserRepository {
         query = query.returning_all();
 
         let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
+
         let user = sqlx::query_as_with(&sql, values)
             .fetch_one(&self.db_pool)
             .await?;
+
+        info!("User updated with ID: {id}");
 
         Ok(user)
     }
 
     async fn delete_user(&self, email: &str) -> Result<(), AppError> {
-        let query = Query::delete()
+        info!("Deleting user with email: {}", email);
+
+        let (sql, values) = Query::delete()
             .from_table(Users::Table)
             .and_where(Expr::col(Users::Email).eq(email))
-            .to_owned();
+            .build_sqlx(PostgresQueryBuilder);
 
-        let (sql, values) = query.build_sqlx(PostgresQueryBuilder);
         sqlx::query_with(&sql, values)
             .execute(&self.db_pool)
             .await?;
+
+        info!("User with email: {email} deleted successfully");
 
         Ok(())
     }

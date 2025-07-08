@@ -311,20 +311,24 @@ impl CommentServiceTrait for CommentService {
         req: &DomainUpdateCommentRequest,
     ) -> Result<ApiResponse<CommentResponse>, ErrorResponse> {
         let method = Method::Put;
+        let id = req.id_post_comment;
+        let user = req.user_name_comment.clone();
+        let comment = req.comment.clone();
+
         let tracing_ctx = self.start_tracing(
             "UpdateComment",
             vec![
                 KeyValue::new("component", "comment"),
                 KeyValue::new("operation", "update"),
-                KeyValue::new("comment.id", req.id_post_comment.unwrap_or_default() as i64),
-                KeyValue::new("comment.user", req.user_name_comment.clone()),
+                KeyValue::new("comment.id", id as i64),
+                KeyValue::new("comment.user", user.clone()),
             ],
         );
 
         let mut request = Request::new(UpdateCommentRequest {
-            id_post_comment: req.id_post_comment.unwrap_or_default(),
-            user_name_comment: req.user_name_comment.clone(),
-            comment: req.comment.clone(),
+            id_post_comment: id,
+            user_name_comment: user.clone(),
+            comment,
         });
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
@@ -340,11 +344,7 @@ impl CommentServiceTrait for CommentService {
                 self.complete_tracing_success(
                     &tracing_ctx,
                     method,
-                    &format!(
-                        "Comment {} updated successfully by user {}",
-                        req.id_post_comment.unwrap_or_default(),
-                        req.user_name_comment
-                    ),
+                    &format!("Comment {id} updated successfully by user {user}",),
                 )
                 .await;
 
@@ -359,11 +359,7 @@ impl CommentServiceTrait for CommentService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!(
-                        "Failed to update comment {}: {}",
-                        req.id_post_comment.unwrap_or_default(),
-                        error_response.message
-                    ),
+                    &format!("Failed to update comment {id}: {}", error_response.message),
                 )
                 .await;
 
@@ -413,10 +409,7 @@ impl CommentServiceTrait for CommentService {
                 self.complete_tracing_error(
                     &tracing_ctx,
                     method,
-                    &format!(
-                        "Failed to delete comment {}: {}",
-                        id, error_response.message
-                    ),
+                    &format!("Failed to delete comment {id}: {}", error_response.message),
                 )
                 .await;
 

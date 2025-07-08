@@ -1,8 +1,10 @@
+use anyhow::Error as AnyhowError;
 use bcrypt::BcryptError;
 use jsonwebtoken::errors::Error as JwtError;
 use serde::Serialize;
 use sqlx::Error as SqlxError;
 use thiserror::Error;
+use validator::ValidationErrors;
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -34,7 +36,16 @@ pub enum AppError {
     EmailAlreadyExists,
 
     #[error("Validation error: {0}")]
-    ValidationError(String),
+    ValidationError(ValidationErrors),
+
+    #[error("Internal error: {0}")]
+    InternalError(String),
+}
+
+impl From<AnyhowError> for AppError {
+    fn from(err: AnyhowError) -> Self {
+        AppError::InternalError(err.to_string())
+    }
 }
 
 impl Serialize for AppError {

@@ -1,5 +1,6 @@
 use crate::{
     abstract_trait::{CategoryServiceTrait, DynCategoryRepository},
+    cache::CacheStore,
     domain::{
         ApiResponse, ApiResponsePagination, CategoryResponse, CreateCategoryRequest, ErrorResponse,
         FindAllCategoryRequest, Pagination, UpdateCategoryRequest,
@@ -13,7 +14,7 @@ use opentelemetry::{
     trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
 use prometheus_client::registry::Registry;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use tonic::Request;
 use tracing::{error, info};
@@ -22,6 +23,7 @@ use tracing::{error, info};
 pub struct CategoryService {
     repository: DynCategoryRepository,
     metrics: Arc<Mutex<Metrics>>,
+    cache_store: Arc<CacheStore>,
 }
 
 impl std::fmt::Debug for CategoryService {
@@ -37,6 +39,7 @@ impl CategoryService {
         repository: DynCategoryRepository,
         metrics: Arc<Mutex<Metrics>>,
         registry: &mut Registry,
+        cache_store: Arc<CacheStore>,
     ) -> Self {
         registry.register(
             "category_service_request_counter",
@@ -52,6 +55,7 @@ impl CategoryService {
         Self {
             repository,
             metrics,
+            cache_store,
         }
     }
 
@@ -175,20 +179,39 @@ impl CategoryServiceTrait for CategoryService {
             page_size,
             search: search.clone().unwrap_or_default(),
         });
+
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
+
+        let cache_key = format!(
+            "categories:page={page}:size={page_size}:search={}",
+            search.clone().unwrap_or_default()
+        );
+
+        if let Some(cached) = self
+            .cache_store
+            .get_from_cache::<ApiResponsePagination<Vec<CategoryResponse>>>(&cache_key)
+            .await
+        {
+            info!("Found categories in cache");
+
+            self.complete_tracing_success(&tracing_ctx, method, "Categories retrieved from cache")
+                .await;
+
+            return Ok(cached);
+        }
 
         match self.repository.find_all(page, page_size, search).await {
             Ok((categories, total_items)) => {
-                info!("Found {} categories", categories.len());
-
                 let total_pages = (total_items as f64 / page_size as f64).ceil() as i32;
-                let category_responses =
-                    categories.into_iter().map(CategoryResponse::from).collect();
+                let category_responses = categories
+                    .into_iter()
+                    .map(CategoryResponse::from)
+                    .collect::<Vec<_>>();
 
                 let response = ApiResponsePagination {
                     status: "success".to_string(),
                     message: "Categories retrieved successfully".to_string(),
-                    data: category_responses,
+                    data: category_responses.clone(),
                     pagination: Pagination {
                         page,
                         page_size,
@@ -197,15 +220,20 @@ impl CategoryServiceTrait for CategoryService {
                     },
                 };
 
+                self.cache_store
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
+                    .await;
+
                 self.complete_tracing_success(
                     &tracing_ctx,
                     method,
-                    "Categories retrieved successfully",
+                    "Categories retrieved from database",
                 )
                 .await;
 
                 Ok(response)
             }
+
             Err(err) => {
                 self.complete_tracing_error(
                     &tracing_ctx,
@@ -236,6 +264,21 @@ impl CategoryServiceTrait for CategoryService {
         let mut request = Request::new(id);
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = format!("category:id={id}");
+
+        if let Some(cached) = self
+            .cache_store
+            .get_from_cache::<ApiResponse<CategoryResponse>>(&cache_key)
+            .await
+        {
+            info!("Found category in cache");
+
+            self.complete_tracing_success(&tracing_ctx, method, "Category retrieved from cache")
+                .await;
+
+            return Ok(Some(cached));
+        }
+
         match self.repository.find_by_id(id).await {
             Ok(Some(category)) => {
                 let response = ApiResponse {
@@ -243,6 +286,10 @@ impl CategoryServiceTrait for CategoryService {
                     message: "Category retrieved successfully".to_string(),
                     data: CategoryResponse::from(category),
                 };
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
+                    .await;
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -329,7 +376,7 @@ impl CategoryServiceTrait for CategoryService {
             "UpdateCategory",
             vec![
                 KeyValue::new("component", "category"),
-                KeyValue::new("category.name", input.name.clone().unwrap_or_default()),
+                KeyValue::new("category.name", input.name.clone()),
             ],
         );
 
@@ -343,6 +390,12 @@ impl CategoryServiceTrait for CategoryService {
                     message: "Category updated successfully".to_string(),
                     data: CategoryResponse::from(category),
                 });
+
+                let cache_key = format!("category:id={}", input.id);
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
+                    .await;
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -386,6 +439,10 @@ impl CategoryServiceTrait for CategoryService {
                     message: "Category deleted successfully".to_string(),
                     data: (),
                 };
+
+                let cache_key = format!("category:id={id}");
+
+                self.cache_store.delete_from_cache(&cache_key).await;
 
                 self.complete_tracing_success(
                     &tracing_ctx,

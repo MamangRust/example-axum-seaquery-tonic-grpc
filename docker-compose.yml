@@ -19,6 +19,18 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7.4
+    container_name: redis
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - app_blog_tonic
+
   blog-client:
     image: ghcr.io/mamangrust/example-seaquery-tonic-grpc/blog-client:latest
     container_name: blog-client

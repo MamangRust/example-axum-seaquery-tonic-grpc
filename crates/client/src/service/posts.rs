@@ -365,7 +365,7 @@ impl PostsServiceTrait for PostsService {
             vec![
                 KeyValue::new("component", "post"),
                 KeyValue::new("operation", "update"),
-                KeyValue::new("post.id", req.post_id.unwrap_or_default().to_string()),
+                KeyValue::new("post.id", req.post_id as i64),
                 KeyValue::new("post.title", req.title.clone()),
                 KeyValue::new("post.category_id", req.category_id.to_string()),
                 KeyValue::new("post.user_id", req.user_id.to_string()),
@@ -373,7 +373,7 @@ impl PostsServiceTrait for PostsService {
         );
 
         let mut request = Request::new(UpdatePostRequest {
-            post_id: req.post_id.unwrap_or_default(),
+            post_id: req.post_id,
             title: req.title.clone(),
             body: req.body.clone(),
             file: req.file.clone(),

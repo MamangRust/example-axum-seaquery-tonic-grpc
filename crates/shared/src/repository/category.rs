@@ -4,10 +4,11 @@ use crate::domain::{CreateCategoryRequest, UpdateCategoryRequest};
 use crate::model::category::Category;
 use crate::schema::category::Categories;
 use crate::utils::AppError;
+use anyhow::Result;
 use async_trait::async_trait;
 use sea_query::{Expr, Func, Order, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 pub struct CategoryRepository {
     db_pool: ConnectionPool,
@@ -28,15 +29,12 @@ impl CategoryRepositoryTrait for CategoryRepository {
         search: Option<String>,
     ) -> Result<(Vec<Category>, i64), AppError> {
         info!(
-            "Finding all categories - page: {page}, page_size: {page_size}, search: {:?}",
+            "Getting all categories - page: {page}, page_size: {page_size}, search: {:?}",
             search
         );
 
-        if page <= 0 || page_size <= 0 {
-            return Err(AppError::ValidationError(
-                "Page and page_size must be positive".to_string(),
-            ));
-        }
+        let page = if page > 0 { page } else { 1 };
+        let page_size = if page_size > 0 { page_size } else { 10 };
 
         let offset = (page - 1) * page_size;
 
@@ -80,8 +78,6 @@ impl CategoryRepositoryTrait for CategoryRepository {
 
         let (count_sql, count_values) = count_query.build_sqlx(PostgresQueryBuilder);
 
-        debug!("Count SQL: {count_sql}");
-
         let total_result = sqlx::query_as_with::<_, (i64,), _>(&count_sql, count_values)
             .fetch_one(&self.db_pool)
             .await;
@@ -100,29 +96,21 @@ impl CategoryRepositoryTrait for CategoryRepository {
     }
 
     async fn find_by_id(&self, id: i32) -> Result<Option<Category>, AppError> {
-        info!("Finding category by id: {}", id);
+        info!("Finding category by id: {id}");
 
-        let query = Query::select()
+        let (sql, values) = Query::select()
             .columns([Categories::Id, Categories::Name])
             .from(Categories::Table)
             .and_where(Expr::col(Categories::Id).eq(id))
             .build_sqlx(PostgresQueryBuilder);
 
-        let (sql, values) = query;
-
-        match sqlx::query_as_with::<_, Category, _>(&sql, values)
+        let result = sqlx::query_as_with::<_, Category, _>(&sql, values)
             .fetch_optional(&self.db_pool)
             .await
-        {
-            Ok(result) => {
-                info!("Find result: {:?}", result);
-                Ok(result)
-            }
-            Err(e) => {
-                error!("Error fetching category by ID {id}: {e}");
-                Err(AppError::SqlxError(e))
-            }
-        }
+            .map_err(AppError::from)?;
+
+        info!("Find result: {:?}", result);
+        Ok(result)
     }
 
     async fn create(&self, input: &CreateCategoryRequest) -> Result<Category, AppError> {
@@ -131,8 +119,9 @@ impl CategoryRepositoryTrait for CategoryRepository {
         let insert = Query::insert()
             .into_table(Categories::Table)
             .columns([Categories::Name])
-            .values_panic([input.name.clone().into()])
-            .returning_all()
+            .values([input.name.clone().into()])
+            .unwrap()
+            .to_owned()
             .build_sqlx(PostgresQueryBuilder);
 
         let (sql, values) = insert;
@@ -140,7 +129,7 @@ impl CategoryRepositoryTrait for CategoryRepository {
         let result = sqlx::query_as_with::<_, Category, _>(&sql, values)
             .fetch_one(&self.db_pool)
             .await
-            .map_err(AppError::SqlxError)?;
+            .map_err(AppError::from)?;
 
         info!("New category inserted with ID: {}", result.id);
 
@@ -148,59 +137,61 @@ impl CategoryRepositoryTrait for CategoryRepository {
     }
 
     async fn update(&self, input: &UpdateCategoryRequest) -> Result<Category, AppError> {
-        let id = input
-            .id
-            .ok_or(AppError::ValidationError("ID is required".into()))?;
+        info!(
+            "Updating category ID {} with new name '{}'",
+            input.id, input.name
+        );
 
-        info!("Updating category ID: {id} with name: {:?}", input.name);
-
-        let update = Query::update()
+        let (sql, values) = Query::update()
             .table(Categories::Table)
-            .values(vec![(
-                Categories::Name,
-                input.name.clone().unwrap_or_default().into(),
-            )])
-            .and_where(Expr::col(Categories::Id).eq(id))
+            .values([(Categories::Name, Expr::val(input.name.clone()).into())])
+            .and_where(Expr::col(Categories::Id).eq(input.id))
             .build_sqlx(PostgresQueryBuilder);
 
-        let (sql, values) = update;
-
-        let res = sqlx::query_with(&sql, values)
+        let affected = sqlx::query_with(&sql, values)
             .execute(&self.db_pool)
-            .await?;
+            .await?
+            .rows_affected();
 
-        if res.rows_affected() == 0 {
-            info!("No category found to update with ID: {id}");
-            return Err(AppError::SqlxError(sqlx::Error::RowNotFound));
+        if affected == 0 {
+            error!("Category ID {} not found for update", input.id);
+            return Err(AppError::NotFound(format!(
+                "Category with ID {} not found",
+                input.id
+            )));
         }
 
-        info!("Category ID: {id} updated successfully");
+        let category = self.find_by_id(input.id).await?.ok_or_else(|| {
+            AppError::NotFound(format!("Category with ID {} not found", input.id))
+        })?;
 
-        self.find_by_id(id)
-            .await?
-            .ok_or(AppError::SqlxError(sqlx::Error::RowNotFound))
+        info!("Successfully updated category ID {}", input.id);
+        Ok(category)
     }
 
     async fn delete(&self, id: i32) -> Result<(), AppError> {
-        info!("Deleting category with ID: {}", id);
+        info!("Deleting category with ID: {id}");
 
-        let delete = Query::delete()
+        let (sql, values) = Query::delete()
             .from_table(Categories::Table)
             .and_where(Expr::col(Categories::Id).eq(id))
             .build_sqlx(PostgresQueryBuilder);
-
-        let (sql, values) = delete;
 
         let result = sqlx::query_with(&sql, values)
             .execute(&self.db_pool)
             .await?;
 
-        if result.rows_affected() == 0 {
-            info!("No category found to delete with ID: {id}");
-            return Err(AppError::SqlxError(sqlx::Error::RowNotFound));
+        match result.rows_affected() {
+            0 => {
+                error!("No category found to delete with ID: {id}");
+                Err(AppError::NotFound(format!(
+                    "Category with ID {id} not found"
+                )))
+            }
+            _ => {
+                info!("Category ID: {id} deleted successfully");
+                Ok(())
+            }
         }
-
-        info!("Category ID: {id} deleted successfully");
-        Ok(())
     }
 }

@@ -1,3 +1,5 @@
+use anyhow::{Context, Result, anyhow};
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database_url: String,
@@ -7,27 +9,38 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn init() -> Config {
-        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    pub fn init() -> Result<Self> {
+        let database_url =
+            std::env::var("DATABASE_URL").context("Missing environment variable: DATABASE_URL")?;
 
-        let run_migrations_str =
-            std::env::var("RUN_MIGRATIONS").expect("RUN_MIGRATIONS must be set");
-        let port_str = std::env::var("PORT").expect("PORT must be set");
+        let jwt_secret =
+            std::env::var("JWT_SECRET").context("Missing environment variable: JWT_SECRET")?;
+
+        let run_migrations_str = std::env::var("RUN_MIGRATIONS")
+            .context("Missing environment variable: RUN_MIGRATIONS")?;
+
+        let port_str = std::env::var("PORT").context("Missing environment variable: PORT")?;
 
         let run_migrations = match run_migrations_str.as_str() {
             "true" => true,
             "false" => false,
-            _ => panic!("RUN_MIGRATIONS must be either 'true' or 'false'"),
+            other => {
+                return Err(anyhow!(
+                    "RUN_MIGRATIONS must be 'true' or 'false', got '{}'",
+                    other
+                ));
+            }
         };
 
-        let port = port_str.parse().expect("Invalid value for PORT");
+        let port = port_str
+            .parse::<u16>()
+            .context("PORT must be a valid u16 integer")?;
 
-        Config {
+        Ok(Self {
             database_url,
             jwt_secret,
             run_migrations,
             port,
-        }
+        })
     }
 }

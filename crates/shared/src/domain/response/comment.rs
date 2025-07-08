@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 use crate::model::comment::Comment;
 use genproto::comment::CommentResponse as ProtoCommentResponse;
 
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, Clone)]
 pub struct CommentResponse {
     pub id: i32,
     pub id_post_comment: i32,
@@ -19,6 +19,20 @@ impl From<Comment> for CommentResponse {
             id_post_comment: comment.id_post_comment,
             user_name_comment: comment.user_name_comment,
             comment: comment.comment,
+        }
+    }
+}
+
+impl From<Option<Comment>> for CommentResponse {
+    fn from(comment: Option<Comment>) -> Self {
+        match comment {
+            Some(comment) => comment.into(),
+            None => CommentResponse {
+                id: 0,
+                id_post_comment: 0,
+                user_name_comment: "".to_string(),
+                comment: "".to_string(),
+            },
         }
     }
 }

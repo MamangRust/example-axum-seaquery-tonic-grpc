@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::model::posts::{Post, PostRelationModel};
@@ -6,7 +6,7 @@ use genproto::post::{
     PostRelationResponse as ProtoPostRelationResponse, PostResponse as ProtoPostResponse,
 };
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct PostResponse {
     pub id: i32,
     pub title: String,
@@ -76,7 +76,7 @@ impl From<Option<ProtoPostResponse>> for PostResponse {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct PostRelationResponse {
     pub post_id: i32,
     pub title: String,

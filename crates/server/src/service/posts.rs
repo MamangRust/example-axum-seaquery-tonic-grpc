@@ -145,7 +145,7 @@ impl PostsService for PostsServiceImpl {
         let req = request.get_ref();
 
         let body = SharedUpdatePostRequest {
-            post_id: Some(req.post_id),
+            post_id: req.post_id,
             title: req.title.clone(),
             body: req.body.clone(),
             file: req.file.clone(),

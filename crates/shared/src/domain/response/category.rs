@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::model::category::Category;
 use genproto::category::CategoryResponse as ProtoCategoryResponse;
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 #[allow(non_snake_case)]
 pub struct CategoryResponse {
     pub id: i32,

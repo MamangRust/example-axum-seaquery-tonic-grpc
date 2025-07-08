@@ -1,5 +1,6 @@
 use crate::{
     abstract_trait::{DynUserRepository, UserServiceTrait},
+    cache::CacheStore,
     domain::{
         ApiResponse, ApiResponsePagination, CreateUserRequest, ErrorResponse, FindAllUserRequest,
         Pagination, UpdateUserRequest, UserResponse,
@@ -13,7 +14,7 @@ use opentelemetry::{
     trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
 use prometheus_client::registry::Registry;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use tonic::Request;
 use tracing::{error, info};
@@ -22,6 +23,7 @@ use tracing::{error, info};
 pub struct UserService {
     repository: DynUserRepository,
     metrics: Arc<Mutex<Metrics>>,
+    cache_store: Arc<CacheStore>,
 }
 
 impl UserService {
@@ -29,6 +31,7 @@ impl UserService {
         repository: DynUserRepository,
         metrics: Arc<Mutex<Metrics>>,
         registry: &mut Registry,
+        cache_store: Arc<CacheStore>,
     ) -> Self {
         registry.register(
             "user_service_request_counter",
@@ -44,6 +47,7 @@ impl UserService {
         Self {
             repository,
             metrics,
+            cache_store,
         }
     }
 
@@ -168,6 +172,22 @@ impl UserServiceTrait for UserService {
         });
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = format!(
+            "users:page={page}:size={page_size}:search={}",
+            search.clone().unwrap_or_default()
+        );
+
+        if let Some(cached) = self
+            .cache_store
+            .get_from_cache::<ApiResponsePagination<Vec<UserResponse>>>(&cache_key)
+            .await
+        {
+            self.complete_tracing_success(&tracing_ctx, method, "Users retrieved from cache")
+                .await;
+
+            return Ok(cached);
+        }
+
         match self.repository.find_all(page, page_size, search).await {
             Ok((users, total_items)) => {
                 info!("Found {} users", users.len());
@@ -185,6 +205,10 @@ impl UserServiceTrait for UserService {
                         total_pages,
                     },
                 };
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
+                    .await;
 
                 self.complete_tracing_success(&tracing_ctx, method, "Users retrieved successfully")
                     .await;
@@ -279,6 +303,19 @@ impl UserServiceTrait for UserService {
         let mut request = Request::new(id);
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = format!("user:id={id}");
+
+        if let Some(cached) = self
+            .cache_store
+            .get_from_cache::<ApiResponse<UserResponse>>(&cache_key)
+            .await
+        {
+            self.complete_tracing_success(&tracing_ctx, method, "User retrieved from cache")
+                .await;
+
+            return Ok(Some(cached));
+        }
+
         match self.repository.find_by_id(id).await {
             Ok(Some(user)) => {
                 let response = Some(ApiResponse {
@@ -286,6 +323,10 @@ impl UserServiceTrait for UserService {
                     message: "User retrieved successfully".to_string(),
                     data: UserResponse::from(user),
                 });
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
+                    .await;
 
                 self.complete_tracing_success(&tracing_ctx, method, "User retrieved successfully")
                     .await;
@@ -335,11 +376,21 @@ impl UserServiceTrait for UserService {
 
         match self.repository.update_user(input).await {
             Ok(user) => {
+                let user_email = user.email.clone();
+
                 let response = Some(ApiResponse {
                     status: "success".to_string(),
                     message: "User updated successfully".to_string(),
                     data: UserResponse::from(user),
                 });
+
+                self.cache_store
+                    .set_to_cache(
+                        &format!("user:email={user_email}"),
+                        &response,
+                        Duration::from_secs(60 * 5),
+                    )
+                    .await;
 
                 self.complete_tracing_success(&tracing_ctx, method, "User updated successfully")
                     .await;
@@ -379,6 +430,10 @@ impl UserServiceTrait for UserService {
                     message: "User deleted successfully".to_string(),
                     data: (),
                 };
+
+                self.cache_store
+                    .delete_from_cache(&format!("user:email={email}"))
+                    .await;
 
                 self.complete_tracing_success(&tracing_ctx, method, "User deleted successfully")
                     .await;

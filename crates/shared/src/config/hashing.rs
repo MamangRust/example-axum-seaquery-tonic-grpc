@@ -5,7 +5,7 @@ use bcrypt::{BcryptError, hash, verify};
 pub struct Hashing;
 
 impl Hashing {
-    pub async fn hash_password(&self, password: &str) -> Result<String, BcryptError> {
+    pub async fn hash_password(&self, password: &str) -> anyhow::Result<String, BcryptError> {
         hash(password, 4)
     }
 
@@ -13,7 +13,7 @@ impl Hashing {
         &self,
         hashed_password: &str,
         password: &str,
-    ) -> Result<(), AppError> {
+    ) -> anyhow::Result<(), AppError> {
         match verify(password, hashed_password) {
             Ok(true) => Ok(()),
             Ok(false) => Err(AppError::HashingError(BcryptError::from(

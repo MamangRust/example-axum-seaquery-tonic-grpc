@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use prometheus_client::registry::Registry;
 use shared::{
     config::JwtConfig,
@@ -19,7 +20,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new(jwt_secret: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(jwt_secret: &str) -> Result<Self> {
         let jwt_config = JwtConfig::new(jwt_secret);
         let registry = Arc::new(Mutex::new(Registry::default()));
         let metrics = Arc::new(Mutex::new(Metrics::new()));
@@ -32,13 +33,15 @@ impl AppState {
         let channel = Channel::from_static("http://blog-server:50051")
             .connect()
             .await
-            .map_err(|e| format!("gRPC connection failed: {e}"))?;
+            .context("gRPC connection to blog-server:50051 failed")?;
 
         let clients = GrpcClients::init(channel).await;
 
         let di_container = {
             let mut registry = registry.lock().await;
-            DependenciesInject::new(clients, metrics.clone(), &mut registry).await
+            DependenciesInject::new(clients, metrics.clone(), &mut registry)
+                .await
+                .context("Failed to initialize dependency injection container")?
         };
 
         Ok(Self {

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use prometheus_client::registry::Registry;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -8,7 +9,8 @@ use crate::{
         DynCommentService, DynFileService, DynPostsRepository, DynPostsService, DynUserRepository,
         DynUserService,
     },
-    config::{ConnectionPool, Hashing, JwtConfig},
+    cache::CacheStore,
+    config::{ConnectionPool, Hashing, JwtConfig, RedisClient, RedisConfig},
     repository::{CategoryRepository, CommentRepository, PostRepository, UserRepository},
     service::{
         AuthService, CategoryService, CommentService, FileService, PostService, UserService,
@@ -47,6 +49,22 @@ impl DependenciesInject {
         metrics: Arc<Mutex<Metrics>>,
         registry: &mut Registry,
     ) -> Self {
+        let config = RedisConfig {
+            host: "redis".into(),
+            port: 6379,
+            db: 1,
+            password: Some("dragon_knight".into()),
+        };
+
+        let redis = RedisClient::new(&config)
+            .await
+            .context("Failed to connect to Redis")
+            .unwrap();
+
+        redis.ping().context("Failed to ping Redis server").unwrap();
+
+        let cache = Arc::new(CacheStore::new(redis.client.clone()));
+
         let category_repository =
             Arc::new(CategoryRepository::new(pool.clone())) as DynCategoryRepository;
         let post_repository = Arc::new(PostRepository::new(pool.clone())) as DynPostsRepository;
@@ -54,21 +72,33 @@ impl DependenciesInject {
             Arc::new(CommentRepository::new(pool.clone())) as DynCommentRepository;
         let user_repository = Arc::new(UserRepository::new(pool)) as DynUserRepository;
 
-        let category_service =
-            Arc::new(CategoryService::new(category_repository, metrics.clone(), registry).await)
-                as DynCategoryService;
+        let category_service = Arc::new(
+            CategoryService::new(
+                category_repository,
+                metrics.clone(),
+                registry,
+                cache.clone(),
+            )
+            .await,
+        ) as DynCategoryService;
 
-        let post_service =
-            Arc::new(PostService::new(post_repository, metrics.clone(), registry).await)
-                as DynPostsService;
+        let post_service = Arc::new(
+            PostService::new(post_repository, metrics.clone(), registry, cache.clone()).await,
+        ) as DynPostsService;
 
-        let comment_service =
-            Arc::new(CommentService::new(comment_repository, metrics.clone(), registry).await)
-                as DynCommentService;
+        let comment_service = Arc::new(
+            CommentService::new(comment_repository, metrics.clone(), registry, cache.clone()).await,
+        ) as DynCommentService;
 
-        let user_service =
-            Arc::new(UserService::new(user_repository.clone(), metrics.clone(), registry).await)
-                as DynUserService;
+        let user_service = Arc::new(
+            UserService::new(
+                user_repository.clone(),
+                metrics.clone(),
+                registry,
+                cache.clone(),
+            )
+            .await,
+        ) as DynUserService;
 
         let auth_service = Arc::new(
             AuthService::new(
@@ -77,6 +107,7 @@ impl DependenciesInject {
                 jwt_config,
                 metrics.clone(),
                 registry,
+                cache.clone(),
             )
             .await,
         ) as DynAuthService;

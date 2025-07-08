@@ -1,5 +1,6 @@
 use crate::{
     abstract_trait::{DynPostsRepository, PostsServiceTrait},
+    cache::CacheStore,
     domain::{
         ApiResponse, ApiResponsePagination, CreatePostRequest, ErrorResponse, FindAllPostRequest,
         Pagination, PostRelationResponse, PostResponse, UpdatePostRequest,
@@ -13,7 +14,7 @@ use opentelemetry::{
     trace::{Span, SpanKind, TraceContextExt, Tracer},
 };
 use prometheus_client::registry::Registry;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use tonic::Request;
 use tracing::{error, info};
@@ -22,6 +23,7 @@ use tracing::{error, info};
 pub struct PostService {
     repository: DynPostsRepository,
     metrics: Arc<Mutex<Metrics>>,
+    cache_store: Arc<CacheStore>,
 }
 
 impl std::fmt::Debug for PostService {
@@ -37,6 +39,7 @@ impl PostService {
         repository: DynPostsRepository,
         metrics: Arc<Mutex<Metrics>>,
         registry: &mut Registry,
+        cache_store: Arc<CacheStore>,
     ) -> Self {
         registry.register(
             "post_service_request_counter",
@@ -52,6 +55,7 @@ impl PostService {
         Self {
             repository,
             metrics,
+            cache_store,
         }
     }
 
@@ -177,6 +181,22 @@ impl PostsServiceTrait for PostService {
         });
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = format!(
+            "posts:page={page}:size={page_size}:search={}",
+            search.clone().unwrap_or_default()
+        );
+
+        if let Some(cache) = self
+            .cache_store
+            .get_from_cache::<ApiResponsePagination<Vec<PostResponse>>>(&cache_key)
+            .await
+        {
+            self.complete_tracing_success(&tracing_ctx, method, "Posts retrieved from cache")
+                .await;
+
+            return Ok(cache);
+        }
+
         match self.repository.get_all_posts(page, page_size, search).await {
             Ok((posts, total_items)) => {
                 let responses = posts.into_iter().map(PostResponse::from).collect();
@@ -193,6 +213,10 @@ impl PostsServiceTrait for PostService {
                         total_pages,
                     },
                 };
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &response, Duration::from_secs(60 * 5))
+                    .await;
 
                 self.complete_tracing_success(&tracing_ctx, method, "Posts retrieved successfully")
                     .await;
@@ -223,6 +247,18 @@ impl PostsServiceTrait for PostService {
             ],
         );
 
+        let cache_key = format!("post:id={post_id}");
+
+        if let Some(cache) = self
+            .cache_store
+            .get_from_cache::<ApiResponse<PostResponse>>(&cache_key)
+            .await
+        {
+            self.complete_tracing_success(&tracing_ctx, Method::Get, "Post retrieved from cache")
+                .await;
+            return Ok(Some(cache));
+        }
+
         match self.repository.get_post(post_id).await {
             Ok(Some(post)) => {
                 let response = Some(ApiResponse {
@@ -230,6 +266,10 @@ impl PostsServiceTrait for PostService {
                     message: "Post retrieved successfully".to_string(),
                     data: PostResponse::from(post),
                 });
+
+                self.cache_store
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
+                    .await;
 
                 self.complete_tracing_success(
                     &tracing_ctx,
@@ -281,6 +321,23 @@ impl PostsServiceTrait for PostService {
         let mut request = Request::new(post_id);
         self.inject_trace_context(&tracing_ctx.cx, &mut request);
 
+        let cache_key = format!("post_relation:id={post_id}");
+
+        if let Some(cache) = self
+            .cache_store
+            .get_from_cache::<ApiResponse<PostRelationResponse>>(&cache_key)
+            .await
+        {
+            self.complete_tracing_success(
+                &tracing_ctx,
+                method,
+                "Post relation retrieved from cache",
+            )
+            .await;
+
+            return Ok(cache);
+        }
+
         match self.repository.get_post_relation(post_id).await {
             Ok(relations) => match relations.into_iter().next() {
                 Some(first_relation) => {
@@ -289,6 +346,10 @@ impl PostsServiceTrait for PostService {
                         message: "Post relation retrieved successfully".to_string(),
                         data: first_relation,
                     };
+
+                    self.cache_store
+                        .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
+                        .await;
 
                     self.complete_tracing_success(
                         &tracing_ctx,
@@ -387,6 +448,11 @@ impl PostsServiceTrait for PostService {
                     data: PostResponse::from(post),
                 };
 
+                let cache_key = format!("post:id={}", input.post_id);
+                self.cache_store
+                    .set_to_cache(&cache_key, &response.clone(), Duration::from_secs(60 * 5))
+                    .await;
+
                 self.complete_tracing_success(&tracing_ctx, method, "Post updated successfully")
                     .await;
 
@@ -425,6 +491,9 @@ impl PostsServiceTrait for PostService {
                     message: "Post deleted successfully".to_string(),
                     data: (),
                 };
+
+                let cache_key = format!("post:id={post_id}");
+                self.cache_store.delete_from_cache(&cache_key).await;
 
                 self.complete_tracing_success(&tracing_ctx, method, "Post deleted successfully")
                     .await;

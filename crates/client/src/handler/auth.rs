@@ -11,7 +11,10 @@ use shared::domain::{ApiResponse, LoginRequest, RegisterRequest, UserResponse};
 use std::sync::Arc;
 use utoipa_axum::router::OpenApiRouter;
 
-use crate::{middleware::jwt, state::AppState};
+use crate::{
+    middleware::{jwt, validate::SimpleValidatedJson},
+    state::AppState,
+};
 
 pub async fn health_checker_handler() -> impl IntoResponse {
     const MESSAGE: &str = "JWT Authentication in Rust using Axum, Postgres, and SQLX";
@@ -36,7 +39,7 @@ pub async fn health_checker_handler() -> impl IntoResponse {
 )]
 pub async fn register_user_handler(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<RegisterRequest>,
+    SimpleValidatedJson(body): SimpleValidatedJson<RegisterRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
     match data.di_container.auth_service.register(body).await {
         Ok(response) => Ok((StatusCode::OK, Json(json!(response)))),
@@ -56,7 +59,7 @@ pub async fn register_user_handler(
 )]
 pub async fn login_user_handler(
     State(data): State<Arc<AppState>>,
-    Json(body): Json<LoginRequest>,
+    SimpleValidatedJson(body): SimpleValidatedJson<LoginRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
     match data.di_container.auth_service.login(body).await {
         Ok(response) => Ok((StatusCode::OK, Json(json!(response)))),
