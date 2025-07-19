@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     let meter_provider = telemetry.init_meter();
     let logger_provider = telemetry.init_logger();
 
-    init_logger(logger_provider.clone());
+    init_logger(logger_provider.clone(), "client");
 
     let config = Config::init().context("Failed to load configuration")?;
 

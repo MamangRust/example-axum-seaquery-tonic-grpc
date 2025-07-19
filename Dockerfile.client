@@ -1,4 +1,4 @@
-FROM rust:1.87 AS builder
+FROM rust:1.88 AS builder
 
 RUN apt-get update && apt-get install -y \
     protobuf-compiler \
@@ -27,6 +27,8 @@ RUN addgroup -g 1000 appuser && \
     adduser -D -s /bin/sh -u 1000 -G appuser appuser
 
 WORKDIR /app
+
+RUN mkdir -p /var/log/app && chown -R 1000:1000 /var/log/app
 
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/seaquery_client ./client
 

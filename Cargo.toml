@@ -30,8 +30,8 @@ sea-query-binder = { version = "0.7.0", features = [
 redis = { version = "0.32.3", features = ["tokio-comp", "aio"] }
 thiserror = "2.0.12"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "registry", "std", "fmt"] }
-tracing-opentelemetry = "0.31.0"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "registry", "std", "fmt", "json"] }
+tracing-appender = "0.2.3"
 prometheus-client = "0.23.1"
 prometheus-client-derive-encode = "0.4.2"
 opentelemetry = "0.30.0"
