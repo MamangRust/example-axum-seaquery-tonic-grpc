@@ -4,7 +4,7 @@ use tracing_appender::{
     non_blocking,
     rolling::{RollingFileAppender, Rotation},
 };
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 pub fn init_logger(sdk_logger_provider: SdkLoggerProvider, component: &str) {
     let log_dir = "/var/log/app";
@@ -16,10 +16,10 @@ pub fn init_logger(sdk_logger_provider: SdkLoggerProvider, component: &str) {
         .with_writer(file_writer)
         .with_ansi(false)
         .json()
-        .with_filter(EnvFilter::new("info")); // Only info/warn/error
+        .with_filter(EnvFilter::new("info"));
 
-    let console_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("off")); // off by default (for prod)
+    let console_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("off"));
 
     let console_layer = fmt::layer()
         .pretty()
@@ -34,8 +34,7 @@ pub fn init_logger(sdk_logger_provider: SdkLoggerProvider, component: &str) {
         .add_directive("h2=off".parse().unwrap())
         .add_directive("reqwest=off".parse().unwrap());
 
-    let otel_layer = OpenTelemetryTracingBridge::new(&sdk_logger_provider)
-        .with_filter(otel_filter);
+    let otel_layer = OpenTelemetryTracingBridge::new(&sdk_logger_provider).with_filter(otel_filter);
 
     tracing_subscriber::registry()
         .with(file_layer)
