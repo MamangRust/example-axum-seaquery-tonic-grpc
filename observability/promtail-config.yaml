@@ -15,4 +15,5 @@ scrape_configs:
           - localhost
         labels:
           job: rust_app
-          __path__: /var/log/rust_app_*.log  
+          __path__: /var/log/app/rust_app_*.log.*
+  
