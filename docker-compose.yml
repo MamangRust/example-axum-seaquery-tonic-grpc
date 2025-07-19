@@ -148,8 +148,8 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ../../observability/loki-config.yaml:/etc/loki/local-config.yaml
-      - loki-data:/loki
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_blog_tonic_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     networks:
       - app_blog_tonic
@@ -172,3 +172,4 @@ volumes:
   grafana-blog-tonic-data:
   postgres_blog_tonic-data:
   redis_blog_tonic-data:
+  loki_blog_tonic_data:
